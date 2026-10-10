@@ -8,7 +8,7 @@
 PRODUCT_NAME = hoi
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.example.hoi
+PRODUCT_BUNDLE_IDENTIFIER = moe.chestnut.hoi
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 com.example. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 moe.chestnut. All rights reserved.

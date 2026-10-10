@@ -1,0 +1,6 @@
+# 默认全部按 LF 存储、LF 检出
+* text=auto eol=lf
+
+# Windows 批处理文件必须保留 CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf

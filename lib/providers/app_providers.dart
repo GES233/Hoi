@@ -16,6 +16,9 @@ class SelectedDateNotifier extends Notifier<DateTime> {
   /// 按天数前后移动选中日期
   void shift(int days) =>
       state = AppDatabase.dateOnly(state.add(Duration(days: days)));
+
+  /// 回到今天
+  void goToday() => state = AppDatabase.dateOnly(DateTime.now());
 }
 
 final selectedDateProvider =

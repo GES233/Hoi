@@ -9,6 +9,9 @@ import 'log_workout_screen.dart';
 import 'plans_screen.dart';
 import 'workout_screen.dart';
 
+/// 首页：行动入口优先，不使用悬浮按钮。
+/// 顺序：日期导航（非今天可回今天）→ 今日方案 → 开始/补记入口 →
+/// 进行中的训练（与选中日期无关）→ 当日运动记录 → 饮食入口与摘要 → 本周概览
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -20,12 +23,10 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final date = ref.watch(selectedDateProvider);
-    final foodEntries = ref.watch(foodEntriesProvider).value ?? [];
-    final workouts = ref.watch(completedWorkoutsProvider).value ?? [];
-    final ongoing = ref.watch(ongoingWorkoutProvider).value;
-
-    final totalIntake =
-        foodEntries.fold<int>(0, (sum, e) => sum + e.calories);
+    final foodAsync = ref.watch(foodEntriesProvider);
+    final workoutsAsync = ref.watch(completedWorkoutsProvider);
+    final ongoingAsync = ref.watch(ongoingWorkoutProvider);
+    final ongoing = ongoingAsync.value;
 
     return Scaffold(
       appBar: AppBar(
@@ -45,33 +46,34 @@ class HomeScreen extends ConsumerWidget {
         children: [
           _DateSwitcher(date: date),
           const SizedBox(height: 12),
-          _WorkoutEntryButtons(ongoing: ongoing, selectedDate: date),
-          const SizedBox(height: 12),
           const _TodayPlanCard(),
           const SizedBox(height: 12),
-          _SummaryCard(totalIntake: totalIntake),
-          const SizedBox(height: 16),
+          _WorkoutEntryButtons(ongoing: ongoing, selectedDate: date),
+          if (ongoingAsync.hasError)
+            const Padding(
+              padding: EdgeInsets.only(top: 12),
+              child: Text('进行中训练状态加载失败'),
+            )
+          else if (ongoing != null) ...[
+            const SizedBox(height: 12),
+            _OngoingWorkoutCard(workout: ongoing),
+          ],
+          const SizedBox(height: 12),
+          _WorkoutSection(workoutsAsync: workoutsAsync),
+          const SizedBox(height: 12),
+          _FoodSection(entriesAsync: foodAsync),
+          const SizedBox(height: 12),
           const _WeeklyExerciseCard(),
-          const SizedBox(height: 16),
-          _FoodSection(entries: foodEntries),
-          const SizedBox(height: 16),
-          _WorkoutSection(workouts: workouts),
-          // 给底部悬浮按钮留出空间
-          const SizedBox(height: 120),
         ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'add_food',
-        icon: const Icon(Icons.add),
-        label: const Text('添加饮食'),
-        onPressed: () => showAddFoodEntryDialog(context),
       ),
     );
   }
 }
 
-/// 「开始运动」/「继续训练」与「补记运动」入口。
-/// 查看历史日期时「开始运动」仍表示现在开始（归属今天），补记归属选中日期
+/// 「开始运动」与「补记运动」入口。
+/// 选中今天时「开始运动」为主按钮；查看历史日期时「补记运动」为主按钮，
+/// 「开始运动」仍代表从现在开始计时（归属今天，数据层已保证）。
+/// 已有进行中训练时隐藏「开始运动」，由进行中训练卡提供继续入口
 class _WorkoutEntryButtons extends ConsumerWidget {
   const _WorkoutEntryButtons({required this.ongoing, required this.selectedDate});
 
@@ -114,26 +116,20 @@ class _WorkoutEntryButtons extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Row(
-      children: [
-        Expanded(
-          child: FilledButton.icon(
-            icon: Icon(ongoing == null ? Icons.play_arrow : Icons.directions_run),
-            label: Text(ongoing == null ? '开始运动' : '继续训练'),
-            onPressed: () {
-              if (ongoing == null) {
-                _startWorkout(context, ref);
-              } else {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const WorkoutScreen()),
-                );
-              }
-            },
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: OutlinedButton.icon(
+    final isToday = selectedDate == AppDatabase.dateOnly(DateTime.now());
+    final startButton = isToday
+        ? FilledButton.icon(
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('开始运动'),
+            onPressed: () => _startWorkout(context, ref),
+          )
+        : OutlinedButton.icon(
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('开始运动'),
+            onPressed: () => _startWorkout(context, ref),
+          );
+    final logButton = isToday
+        ? OutlinedButton.icon(
             icon: const Icon(Icons.edit_note),
             label: const Text('补记运动'),
             onPressed: () => Navigator.of(context).push(
@@ -141,14 +137,86 @@ class _WorkoutEntryButtons extends ConsumerWidget {
                 builder: (_) => LogWorkoutScreen(initialDate: selectedDate),
               ),
             ),
-          ),
+          )
+        : FilledButton.icon(
+            icon: const Icon(Icons.edit_note),
+            label: const Text('补记运动'),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => LogWorkoutScreen(initialDate: selectedDate),
+              ),
+            ),
+          );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            if (ongoing == null) ...[
+              Expanded(child: startButton),
+              const SizedBox(width: 12),
+            ],
+            Expanded(child: logButton),
+          ],
         ),
+        if (!isToday && ongoing == null)
+          Text(
+            '「开始运动」从现在开始计时；补记归属选中日期',
+            style: Theme.of(context).textTheme.labelSmall,
+          ),
       ],
     );
   }
 }
 
-/// 「今日方案」卡片：各方案阈值与今日状态、休息标记入口（布局阶段 3 再重排）
+/// 进行中的训练卡：只反映「现在」，与选中日期无关。
+/// 显示开始时间与暂停状态而不挂秒表，避免首页常驻定时器
+class _OngoingWorkoutCard extends StatelessWidget {
+  const _OngoingWorkoutCard({required this.workout});
+
+  final Workout workout;
+
+  @override
+  Widget build(BuildContext context) {
+    final startedAt = workout.startedAt;
+    final subtitle = startedAt == null
+        ? '计时信息缺失'
+        : '开始于 ${DateFormat('HH:mm').format(startedAt)}'
+            '${workout.pausedAt != null ? ' · 已暂停' : ''}';
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            const Icon(Icons.directions_run),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('训练进行中',
+                      style: Theme.of(context).textTheme.titleSmall),
+                  Text(subtitle,
+                      style: Theme.of(context).textTheme.labelSmall),
+                ],
+              ),
+            ),
+            FilledButton.icon(
+              icon: const Icon(Icons.play_arrow, size: 18),
+              label: const Text('继续训练'),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const WorkoutScreen()),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 「今日方案」卡片：各方案阈值与选中日期状态、休息标记入口
 class _TodayPlanCard extends ConsumerWidget {
   const _TodayPlanCard();
 
@@ -238,8 +306,8 @@ class _TodayPlanCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final date = ref.watch(selectedDateProvider);
-    final plans = ref.watch(exercisePlansProvider).value ?? [];
-    final evals = ref.watch(dailyPlanEvaluationsProvider).value ?? {};
+    final plansAsync = ref.watch(exercisePlansProvider);
+    final evalsAsync = ref.watch(dailyPlanEvaluationsProvider);
     final rest = ref.watch(restMarkProvider).value;
 
     return Card(
@@ -260,7 +328,18 @@ class _TodayPlanCard extends ConsumerWidget {
                   ),
               ],
             ),
-            if (plans.isEmpty)
+            // 加载 / 错误 / 空 / 数据 分开呈现
+            if (plansAsync.hasError || evalsAsync.hasError)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text('方案状态加载失败'),
+              )
+            else if (!plansAsync.hasValue)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text('加载中…'),
+              )
+            else if (plansAsync.value!.isEmpty)
               Row(
                 children: [
                   const Expanded(child: Text('尚未设置最低方案')),
@@ -273,7 +352,8 @@ class _TodayPlanCard extends ConsumerWidget {
                 ],
               )
             else
-              for (final p in plans) _planRow(context, p, evals[p.id]),
+              for (final p in plansAsync.value!)
+                _planRow(context, p, evalsAsync.value?[p.id]),
             if (rest != null)
               Row(
                 children: [
@@ -299,63 +379,54 @@ class _TodayPlanCard extends ConsumerWidget {
   }
 }
 
-class _DateSwitcher extends ConsumerWidget {  const _DateSwitcher({required this.date});
+/// 紧凑日期导航；仅当选中日期不是今天时提供「回到今天」
+class _DateSwitcher extends ConsumerWidget {
+  const _DateSwitcher({required this.date});
 
   final DateTime date;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isToday = date == AppDatabase.dateOnly(DateTime.now());
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         IconButton(
           icon: const Icon(Icons.chevron_left),
           tooltip: '前一天',
+          visualDensity: VisualDensity.compact,
           onPressed: () =>
               ref.read(selectedDateProvider.notifier).shift(-1),
         ),
-        Text(
-          HomeScreen.formatDate(date),
-          style: Theme.of(context).textTheme.titleMedium,
+        Flexible(
+          child: Text(
+            HomeScreen.formatDate(date),
+            style: Theme.of(context).textTheme.titleMedium,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
         IconButton(
           icon: const Icon(Icons.chevron_right),
           tooltip: '后一天',
+          visualDensity: VisualDensity.compact,
           onPressed: () => ref.read(selectedDateProvider.notifier).shift(1),
         ),
+        if (!isToday)
+          TextButton(
+            onPressed: () =>
+                ref.read(selectedDateProvider.notifier).goToday(),
+            child: const Text('回到今天'),
+          ),
       ],
     );
   }
 }
 
-class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({required this.totalIntake});
-
-  final int totalIntake;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        child: Column(
-          children: [
-            Text('总摄入', style: Theme.of(context).textTheme.labelMedium),
-            const SizedBox(height: 4),
-            Text('$totalIntake',
-                style: Theme.of(context).textTheme.headlineSmall),
-            Text('kcal', style: Theme.of(context).textTheme.labelSmall),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
+/// 饮食分区：含「添加饮食」入口与当日摄入小字摘要（热量摘要不作主页焦点）
 class _FoodSection extends ConsumerWidget {
-  const _FoodSection({required this.entries});
+  const _FoodSection({required this.entriesAsync});
 
-  final List<FoodEntry> entries;
+  final AsyncValue<List<FoodEntry>> entriesAsync;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -365,24 +436,62 @@ class _FoodSection extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('饮食记录', style: Theme.of(context).textTheme.titleMedium),
-            if (entries.isEmpty)
+            Row(
+              children: [
+                Text('饮食记录', style: Theme.of(context).textTheme.titleMedium),
+                const Spacer(),
+                TextButton.icon(
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('添加饮食'),
+                  onPressed: () => showAddFoodEntryDialog(context),
+                ),
+              ],
+            ),
+            // 加载 / 错误 / 空 / 数据 分开呈现
+            if (entriesAsync.hasError)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 12),
-                child: Text('暂无记录'),
+                child: Text('饮食记录加载失败'),
+              )
+            else if (!entriesAsync.hasValue)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text('加载中…'),
               )
             else
-              for (final mealType in MealType.values)
-                ..._buildMealGroup(context, ref, mealType),
+              ..._buildContent(context, ref, entriesAsync.value!),
           ],
         ),
       ),
     );
   }
 
+  List<Widget> _buildContent(
+    BuildContext context,
+    WidgetRef ref,
+    List<FoodEntry> entries,
+  ) {
+    final total = entries.fold<int>(0, (sum, e) => sum + e.calories);
+    return [
+      Text(
+        '当日摄入 $total kcal',
+        style: Theme.of(context).textTheme.labelSmall,
+      ),
+      if (entries.isEmpty)
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 12),
+          child: Text('暂无记录'),
+        )
+      else
+        for (final mealType in MealType.values)
+          ..._buildMealGroup(context, ref, entries, mealType),
+    ];
+  }
+
   List<Widget> _buildMealGroup(
     BuildContext context,
     WidgetRef ref,
+    List<FoodEntry> entries,
     MealType mealType,
   ) {
     final group =
@@ -410,9 +519,9 @@ class _FoodSection extends ConsumerWidget {
 
 /// 当天已完成训练列表
 class _WorkoutSection extends ConsumerWidget {
-  const _WorkoutSection({required this.workouts});
+  const _WorkoutSection({required this.workoutsAsync});
 
-  final List<Workout> workouts;
+  final AsyncValue<List<Workout>> workoutsAsync;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -423,13 +532,24 @@ class _WorkoutSection extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('运动记录', style: Theme.of(context).textTheme.titleMedium),
-            if (workouts.isEmpty)
+            // 加载 / 错误 / 空 / 数据 分开呈现
+            if (workoutsAsync.hasError)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text('运动记录加载失败'),
+              )
+            else if (!workoutsAsync.hasValue)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text('加载中…'),
+              )
+            else if (workoutsAsync.value!.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 12),
                 child: Text('暂无记录'),
               )
             else
-              for (final w in workouts) _WorkoutTile(workout: w),
+              for (final w in workoutsAsync.value!) _WorkoutTile(workout: w),
           ],
         ),
       ),
@@ -479,12 +599,13 @@ class _WeeklyExerciseCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final date = ref.watch(selectedDateProvider);
-    final goals = ref.watch(weeklyGoalsProvider).value ??
-        AppDatabase.defaultWeeklyGoals;
-    final weekWorkouts = ref.watch(weekWorkoutsProvider).value ?? [];
+    final goalsAsync = ref.watch(weeklyGoalsProvider);
+    final weekAsync = ref.watch(weekWorkoutsProvider);
+    final goals = goalsAsync.value ?? AppDatabase.defaultWeeklyGoals;
 
     final weekStart = AppDatabase.weekStart(date);
     final weekEnd = weekStart.add(const Duration(days: 6));
+    final weekWorkouts = weekAsync.value ?? [];
     // 有已完成训练的日期集合，用于点亮落实点阵
     final activeDays =
         weekWorkouts.map((w) => AppDatabase.dateOnly(w.date)).toSet();
@@ -514,32 +635,45 @@ class _WeeklyExerciseCard extends ConsumerWidget {
               '${DateFormat('M月d日').format(weekEnd)}',
               style: Theme.of(context).textTheme.labelSmall,
             ),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                for (var i = 0; i < 7; i++)
-                  _WeekDayDot(
-                    label: _weekdayLabels[i],
-                    active: activeDays
-                        .contains(weekStart.add(Duration(days: i))),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            _GoalProgress(
-              label: '运动次数',
-              current: weekWorkouts.length,
-              target: goals.targetSessions,
-              unit: '次',
-            ),
-            const SizedBox(height: 12),
-            _GoalProgress(
-              label: '运动时长',
-              current: totalMinutes,
-              target: goals.targetMinutes,
-              unit: '分钟',
-            ),
+            // 加载 / 错误 / 数据 分开呈现
+            if (weekAsync.hasError)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text('本周统计加载失败'),
+              )
+            else if (!weekAsync.hasValue)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text('加载中…'),
+              )
+            else ...[
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  for (var i = 0; i < 7; i++)
+                    _WeekDayDot(
+                      label: _weekdayLabels[i],
+                      active: activeDays
+                          .contains(weekStart.add(Duration(days: i))),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              _GoalProgress(
+                label: '运动次数',
+                current: weekWorkouts.length,
+                target: goals.targetSessions,
+                unit: '次',
+              ),
+              const SizedBox(height: 12),
+              _GoalProgress(
+                label: '运动时长',
+                current: totalMinutes,
+                target: goals.targetMinutes,
+                unit: '分钟',
+              ),
+            ],
           ],
         ),
       ),

@@ -5,11 +5,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../database/database.dart';
 import '../providers/app_providers.dart';
+import '../widgets/set_stopwatch.dart';
 import '../widgets/workout_dialogs.dart';
 
-/// 进行中训练页：计时显示、暂停/继续、动作与组记录、结束或丢弃。
-/// 计时的权威数据是数据库里的 startedAt/pausedAt/pausedSeconds，
+/// 进行中训练页：动作与组记录为主体；训练总用时降级为顶部紧凑一行。
+/// 训练级计时的权威数据是数据库里的 startedAt/pausedAt/pausedSeconds，
 /// 页面内的 Timer 每秒只刷新显示，不写数据库。
+/// 组级小秒表（SetStopwatch）只存页面内存、不落库：
+/// 应用被杀会丢失正在走的这一组，这是与开发者确认的既定取舍。
 class WorkoutScreen extends ConsumerStatefulWidget {
   const WorkoutScreen({super.key});
 
@@ -19,6 +22,10 @@ class WorkoutScreen extends ConsumerStatefulWidget {
 
 class _WorkoutScreenState extends ConsumerState<WorkoutScreen> {
   Timer? _ticker;
+
+  /// 正在计时的组（全场至多一个）；仅页面内存，见类注释
+  SetStopwatch? _stopwatch;
+  int? _timingExerciseId;
 
   @override
   void initState() {
@@ -55,6 +62,58 @@ class _WorkoutScreenState extends ConsumerState<WorkoutScreen> {
           weightKg: draft.weightKg,
           note: draft.note,
         );
+  }
+
+  /// 开始一组计时；时钟来自 provider，测试可注入假时钟
+  void _startSetTiming(WorkoutExercise exercise) {
+    final stopwatch = SetStopwatch(now: ref.read(setStopwatchClockProvider));
+    stopwatch.start();
+    setState(() {
+      _stopwatch = stopwatch;
+      _timingExerciseId = exercise.id;
+    });
+  }
+
+  /// 暂停/继续当前组计时
+  void _toggleSetPause() {
+    final stopwatch = _stopwatch;
+    if (stopwatch == null) return;
+    setState(() {
+      stopwatch.isPaused ? stopwatch.resume() : stopwatch.pause();
+    });
+  }
+
+  /// 结束并保存：把实际秒数直接写为一条时长组记录（可删除，不弹确认）；
+  /// 不足 1 秒不构成有效组，提示且不保存
+  Future<void> _finishSetTiming(WorkoutExercise exercise) async {
+    final stopwatch = _stopwatch;
+    if (stopwatch == null) return;
+    final seconds = stopwatch.stop();
+    setState(() {
+      _stopwatch = null;
+      _timingExerciseId = null;
+    });
+    if (seconds <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('计时不足 1 秒，未保存该组')),
+      );
+      return;
+    }
+    await ref
+        .read(databaseProvider)
+        .addWorkoutSet(exercise.id, durationSeconds: seconds);
+  }
+
+  /// 训练级暂停/继续；暂停训练时自动暂停进行中的组计时，
+  /// 恢复训练不自动恢复组计时，由用户在动作卡上手动继续
+  void _togglePause(Workout workout) {
+    final db = ref.read(databaseProvider);
+    if (workout.pausedAt != null) {
+      db.resumeWorkout(workout.id);
+    } else {
+      _stopwatch?.pause();
+      db.pauseWorkout(workout.id);
+    }
   }
 
   Future<void> _discard(Workout workout) async {
@@ -177,84 +236,29 @@ class _WorkoutScreenState extends ConsumerState<WorkoutScreen> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                Text(
-                  formatElapsed(elapsed),
-                  style: Theme.of(context).textTheme.displayMedium,
-                ),
-                if (paused)
-                  Text('已暂停', style: Theme.of(context).textTheme.labelLarge),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    OutlinedButton.icon(
-                      icon: Icon(paused ? Icons.play_arrow : Icons.pause),
-                      label: Text(paused ? '继续' : '暂停'),
-                      onPressed: () => paused
-                          ? db.resumeWorkout(workout.id)
-                          : db.pauseWorkout(workout.id),
-                    ),
-                    FilledButton.icon(
-                      icon: const Icon(Icons.stop),
-                      label: const Text('结束训练'),
-                      onPressed: () => _finish(workout, exercises, sets),
-                    ),
-                  ],
-                ),
-              ],
+        // 训练总用时降级为紧凑一行，不占视觉中心；暂停/继续/结束语义不变
+        Row(
+          children: [
+            Text(
+              '总用时 ${formatElapsed(elapsed)}${paused ? ' · 已暂停' : ''}',
+              style: Theme.of(context).textTheme.titleSmall,
             ),
-          ),
+            const Spacer(),
+            TextButton.icon(
+              icon: Icon(paused ? Icons.play_arrow : Icons.pause, size: 18),
+              label: Text(paused ? '继续' : '暂停'),
+              onPressed: () => _togglePause(workout),
+            ),
+            FilledButton.icon(
+              icon: const Icon(Icons.stop, size: 18),
+              label: const Text('结束训练'),
+              onPressed: () => _finish(workout, exercises, sets),
+            ),
+          ],
         ),
         const SizedBox(height: 12),
         for (final exercise in exercises)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          '${exercise.name}（${exercise.category.label}）',
-                          style: Theme.of(context).textTheme.titleSmall,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline, size: 20),
-                        tooltip: '删除动作',
-                        onPressed: () =>
-                            db.deleteWorkoutExercise(exercise.id),
-                      ),
-                    ],
-                  ),
-                  for (final set
-                      in sets.where((s) => s.exerciseId == exercise.id))
-                    ListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(describeSet(set)),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.close, size: 18),
-                        tooltip: '删除组',
-                        onPressed: () => db.deleteWorkoutSet(set.id),
-                      ),
-                    ),
-                  TextButton.icon(
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('添加组'),
-                    onPressed: () => _addSet(exercise),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          _exerciseCard(context, exercise, sets, db),
         const SizedBox(height: 8),
         OutlinedButton.icon(
           icon: const Icon(Icons.add),
@@ -262,6 +266,86 @@ class _WorkoutScreenState extends ConsumerState<WorkoutScreen> {
           onPressed: () => _addExercise(workout),
         ),
       ],
+    );
+  }
+
+  /// 单个动作卡：已有组列表 + 添加组 + 组级小秒表
+  /// （全场至多一个组在计时，其他动作的「开始一组」此时禁用）
+  Widget _exerciseCard(
+    BuildContext context,
+    WorkoutExercise exercise,
+    List<WorkoutSet> sets,
+    AppDatabase db,
+  ) {
+    final isTimingThis = _timingExerciseId == exercise.id;
+    final isTimingOther = _timingExerciseId != null && !isTimingThis;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${exercise.name}（${exercise.category.label}）',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 20),
+                  tooltip: '删除动作',
+                  onPressed: () => db.deleteWorkoutExercise(exercise.id),
+                ),
+              ],
+            ),
+            for (final set in sets.where((s) => s.exerciseId == exercise.id))
+              ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: Text(describeSet(set)),
+                trailing: IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  tooltip: '删除组',
+                  onPressed: () => db.deleteWorkoutSet(set.id),
+                ),
+              ),
+            Row(
+              children: [
+                TextButton.icon(
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('添加组'),
+                  onPressed: () => _addSet(exercise),
+                ),
+                const Spacer(),
+                if (isTimingThis) ...[
+                  // 小号读数，不强调；Timer 每秒刷新显示
+                  Text(
+                    formatElapsed(_stopwatch!.elapsedSeconds()),
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                  TextButton(
+                    onPressed: _toggleSetPause,
+                    child: Text(_stopwatch!.isPaused ? '继续' : '暂停'),
+                  ),
+                  FilledButton.tonal(
+                    onPressed: () => _finishSetTiming(exercise),
+                    child: const Text('结束并保存'),
+                  ),
+                ] else
+                  TextButton.icon(
+                    icon: const Icon(Icons.timer_outlined, size: 18),
+                    label: const Text('开始一组'),
+                    onPressed:
+                        isTimingOther ? null : () => _startSetTiming(exercise),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

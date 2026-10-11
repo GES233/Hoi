@@ -8,6 +8,10 @@ final databaseProvider = Provider<AppDatabase>((ref) {
   return db;
 });
 
+/// 组级小秒表的时钟来源；测试可 override 为可控假时钟
+final setStopwatchClockProvider =
+    Provider<DateTime Function()>((ref) => DateTime.now);
+
 /// 当前选中的日期（只含日期部分），默认今天
 class SelectedDateNotifier extends Notifier<DateTime> {
   @override

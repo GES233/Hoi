@@ -27,14 +27,17 @@ void main() {
     if (!dbClosed) await db.close();
   });
 
-  Future<void> pumpHome(WidgetTester tester) async {
+  Future<void> pumpHome(WidgetTester tester, {DateTime Function()? clock}) async {
     // 默认 800x600 视口装不下整个首页，加高避免 ListView 懒加载把离屏内容移出树
     tester.view.physicalSize = const Size(1080, 2400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [databaseProvider.overrideWithValue(db)],
+        overrides: [
+          databaseProvider.overrideWithValue(db),
+          if (clock != null) setStopwatchClockProvider.overrideWithValue(clock),
+        ],
         child: const MaterialApp(home: HomeScreen()),
       ),
     );
@@ -332,6 +335,65 @@ void main() {
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
     expect(find.text('食物名称'), findsNothing);
+
+    await finishTest(tester);
+  });
+
+  testWidgets('组级小秒表：开始一组→结束并保存写入时长组；大秒表已降级', (tester) async {
+    // 假时钟注入组级秒表，不依赖真实等待
+    var fakeNow = DateTime(2026, 10, 5, 10, 0, 0);
+    await pumpHome(tester, clock: () => fakeNow);
+
+    // 训练页有常驻 periodic Timer（每秒刷新显示），进入后不能 pumpAndSettle，
+    // 统一用固定时长 pump 推进
+    Future<void> pumpFrames() async {
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+    }
+
+    await tester.tap(find.text('开始运动'));
+    await pumpFrames();
+    await pumpFrames();
+    expect(find.text('进行中的训练'), findsOneWidget); // 已到训练页
+
+    // 大秒表降级：总用时为紧凑一行，页面上没有大号计时读数（无 >=30 字号文本）
+    expect(find.textContaining('总用时'), findsOneWidget);
+    expect(find.text('结束训练'), findsOneWidget);
+    expect(
+      tester
+          .widgetList<Text>(find.byType(Text))
+          .any((t) => (t.style?.fontSize ?? 0) >= 30),
+      isFalse,
+    );
+
+    // 添加动作
+    await tester.tap(find.text('添加动作'));
+    await pumpFrames();
+    await tester.enterText(find.byType(TextFormField).first, '平板支撑');
+    await tester.tap(find.text('添加'));
+    await pumpFrames();
+    await pumpFrames();
+    expect(find.textContaining('平板支撑'), findsOneWidget);
+
+    // 开始一组 → 假时钟推进 90 秒 → 结束并保存
+    await tester.tap(find.text('开始一组'));
+    await pumpFrames();
+    fakeNow = fakeNow.add(const Duration(seconds: 90));
+    await tester.pump(const Duration(seconds: 1)); // 让显示随 Timer 刷新一次
+    await tester.tap(find.text('结束并保存'));
+    await pumpFrames();
+    await pumpFrames();
+
+    final workout = await db.getOngoingWorkout();
+    final sets = await db.getWorkoutSets(workout!.id);
+    expect(sets, hasLength(1));
+    expect(sets.single.durationSeconds, 90);
+    expect(AppDatabase.isValidSet(sets.single), isTrue);
+
+    // 返回首页后再收尾：推入的路由未弹出时 db.close() 可能挂起，
+    // 且训练页的 periodic Timer 需要随组件树卸载取消
+    await tester.pageBack();
+    await pumpFrames();
 
     await finishTest(tester);
   });

@@ -22,6 +22,10 @@ void main() {
   });
 
   Future<void> pumpHome(WidgetTester tester) async {
+    // 默认 800x600 视口装不下整个首页，加高避免 ListView 懒加载把离屏内容移出树
+    tester.view.physicalSize = const Size(1080, 2200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
     await tester.pumpWidget(
       ProviderScope(
         overrides: [databaseProvider.overrideWithValue(db)],
@@ -137,6 +141,37 @@ void main() {
     final favorites = await db.select(db.favoriteFoods).get();
     expect(favorites, hasLength(1));
     expect(favorites.single.calories, 100);
+
+    await finishTest(tester);
+  });
+
+  testWidgets('本周运动卡片显示目标进度并随记录更新', (tester) async {
+    await pumpHome(tester);
+    final today = AppDatabase.dateOnly(DateTime.now());
+
+    // 空表时使用默认目标：每周 3 次、90 分钟
+    expect(find.text('本周运动'), findsOneWidget);
+    expect(find.text('0 / 3 次'), findsOneWidget);
+    expect(find.text('0 / 90 分钟'), findsOneWidget);
+
+    await db.insertExerciseEntry(
+      ExerciseEntriesCompanion(
+        date: Value(today),
+        name: const Value('跑步'),
+        durationMinutes: const Value(30),
+        caloriesBurned: const Value(240),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('1 / 3 次'), findsOneWidget);
+    expect(find.text('30 / 90 分钟'), findsOneWidget);
+
+    // 修改目标后进度按新目标显示
+    await db.updateWeeklyGoals(targetSessions: 5, targetMinutes: 120);
+    await tester.pumpAndSettle();
+    expect(find.text('1 / 5 次'), findsOneWidget);
+    expect(find.text('30 / 120 分钟'), findsOneWidget);
 
     await finishTest(tester);
   });

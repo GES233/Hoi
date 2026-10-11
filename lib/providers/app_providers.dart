@@ -35,3 +35,15 @@ final exerciseEntriesProvider =
 final favoriteFoodsProvider = StreamProvider.autoDispose<List<FavoriteFood>>(
   (ref) => ref.watch(databaseProvider).watchFavoriteFoods(),
 );
+
+/// 选中日期所在周（周一至周日）的全部运动记录
+final weekExerciseEntriesProvider =
+    StreamProvider.autoDispose<List<ExerciseEntry>>((ref) {
+  final date = ref.watch(selectedDateProvider);
+  return ref.watch(databaseProvider).watchExerciseEntriesInWeek(date);
+});
+
+/// 每周运动目标（次数 + 分钟）
+final weeklyGoalsProvider = StreamProvider.autoDispose<WeeklyExerciseGoal>(
+  (ref) => ref.watch(databaseProvider).watchWeeklyGoals(),
+);

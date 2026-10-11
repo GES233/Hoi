@@ -960,6 +960,271 @@ class FavoriteFoodsCompanion extends UpdateCompanion<FavoriteFood> {
   }
 }
 
+class $WeeklyExerciseGoalsTable extends WeeklyExerciseGoals
+    with TableInfo<$WeeklyExerciseGoalsTable, WeeklyExerciseGoal> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $WeeklyExerciseGoalsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _targetSessionsMeta = const VerificationMeta(
+    'targetSessions',
+  );
+  @override
+  late final GeneratedColumn<int> targetSessions = GeneratedColumn<int>(
+    'target_sessions',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _targetMinutesMeta = const VerificationMeta(
+    'targetMinutes',
+  );
+  @override
+  late final GeneratedColumn<int> targetMinutes = GeneratedColumn<int>(
+    'target_minutes',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, targetSessions, targetMinutes];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'weekly_exercise_goals';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<WeeklyExerciseGoal> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('target_sessions')) {
+      context.handle(
+        _targetSessionsMeta,
+        targetSessions.isAcceptableOrUnknown(
+          data['target_sessions']!,
+          _targetSessionsMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_targetSessionsMeta);
+    }
+    if (data.containsKey('target_minutes')) {
+      context.handle(
+        _targetMinutesMeta,
+        targetMinutes.isAcceptableOrUnknown(
+          data['target_minutes']!,
+          _targetMinutesMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_targetMinutesMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  WeeklyExerciseGoal map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return WeeklyExerciseGoal(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      targetSessions: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}target_sessions'],
+      )!,
+      targetMinutes: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}target_minutes'],
+      )!,
+    );
+  }
+
+  @override
+  $WeeklyExerciseGoalsTable createAlias(String alias) {
+    return $WeeklyExerciseGoalsTable(attachedDatabase, alias);
+  }
+}
+
+class WeeklyExerciseGoal extends DataClass
+    implements Insertable<WeeklyExerciseGoal> {
+  final int id;
+  final int targetSessions;
+  final int targetMinutes;
+  const WeeklyExerciseGoal({
+    required this.id,
+    required this.targetSessions,
+    required this.targetMinutes,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['target_sessions'] = Variable<int>(targetSessions);
+    map['target_minutes'] = Variable<int>(targetMinutes);
+    return map;
+  }
+
+  WeeklyExerciseGoalsCompanion toCompanion(bool nullToAbsent) {
+    return WeeklyExerciseGoalsCompanion(
+      id: Value(id),
+      targetSessions: Value(targetSessions),
+      targetMinutes: Value(targetMinutes),
+    );
+  }
+
+  factory WeeklyExerciseGoal.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return WeeklyExerciseGoal(
+      id: serializer.fromJson<int>(json['id']),
+      targetSessions: serializer.fromJson<int>(json['targetSessions']),
+      targetMinutes: serializer.fromJson<int>(json['targetMinutes']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'targetSessions': serializer.toJson<int>(targetSessions),
+      'targetMinutes': serializer.toJson<int>(targetMinutes),
+    };
+  }
+
+  WeeklyExerciseGoal copyWith({
+    int? id,
+    int? targetSessions,
+    int? targetMinutes,
+  }) => WeeklyExerciseGoal(
+    id: id ?? this.id,
+    targetSessions: targetSessions ?? this.targetSessions,
+    targetMinutes: targetMinutes ?? this.targetMinutes,
+  );
+  WeeklyExerciseGoal copyWithCompanion(WeeklyExerciseGoalsCompanion data) {
+    return WeeklyExerciseGoal(
+      id: data.id.present ? data.id.value : this.id,
+      targetSessions: data.targetSessions.present
+          ? data.targetSessions.value
+          : this.targetSessions,
+      targetMinutes: data.targetMinutes.present
+          ? data.targetMinutes.value
+          : this.targetMinutes,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('WeeklyExerciseGoal(')
+          ..write('id: $id, ')
+          ..write('targetSessions: $targetSessions, ')
+          ..write('targetMinutes: $targetMinutes')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, targetSessions, targetMinutes);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is WeeklyExerciseGoal &&
+          other.id == this.id &&
+          other.targetSessions == this.targetSessions &&
+          other.targetMinutes == this.targetMinutes);
+}
+
+class WeeklyExerciseGoalsCompanion extends UpdateCompanion<WeeklyExerciseGoal> {
+  final Value<int> id;
+  final Value<int> targetSessions;
+  final Value<int> targetMinutes;
+  const WeeklyExerciseGoalsCompanion({
+    this.id = const Value.absent(),
+    this.targetSessions = const Value.absent(),
+    this.targetMinutes = const Value.absent(),
+  });
+  WeeklyExerciseGoalsCompanion.insert({
+    this.id = const Value.absent(),
+    required int targetSessions,
+    required int targetMinutes,
+  }) : targetSessions = Value(targetSessions),
+       targetMinutes = Value(targetMinutes);
+  static Insertable<WeeklyExerciseGoal> custom({
+    Expression<int>? id,
+    Expression<int>? targetSessions,
+    Expression<int>? targetMinutes,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (targetSessions != null) 'target_sessions': targetSessions,
+      if (targetMinutes != null) 'target_minutes': targetMinutes,
+    });
+  }
+
+  WeeklyExerciseGoalsCompanion copyWith({
+    Value<int>? id,
+    Value<int>? targetSessions,
+    Value<int>? targetMinutes,
+  }) {
+    return WeeklyExerciseGoalsCompanion(
+      id: id ?? this.id,
+      targetSessions: targetSessions ?? this.targetSessions,
+      targetMinutes: targetMinutes ?? this.targetMinutes,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (targetSessions.present) {
+      map['target_sessions'] = Variable<int>(targetSessions.value);
+    }
+    if (targetMinutes.present) {
+      map['target_minutes'] = Variable<int>(targetMinutes.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('WeeklyExerciseGoalsCompanion(')
+          ..write('id: $id, ')
+          ..write('targetSessions: $targetSessions, ')
+          ..write('targetMinutes: $targetMinutes')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -968,6 +1233,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     this,
   );
   late final $FavoriteFoodsTable favoriteFoods = $FavoriteFoodsTable(this);
+  late final $WeeklyExerciseGoalsTable weeklyExerciseGoals =
+      $WeeklyExerciseGoalsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -976,6 +1243,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     foodEntries,
     exerciseEntries,
     favoriteFoods,
+    weeklyExerciseGoals,
   ];
 }
 
@@ -1549,6 +1817,193 @@ typedef $$FavoriteFoodsTableProcessedTableManager =
       FavoriteFood,
       PrefetchHooks Function()
     >;
+typedef $$WeeklyExerciseGoalsTableCreateCompanionBuilder =
+    WeeklyExerciseGoalsCompanion Function({
+      Value<int> id,
+      required int targetSessions,
+      required int targetMinutes,
+    });
+typedef $$WeeklyExerciseGoalsTableUpdateCompanionBuilder =
+    WeeklyExerciseGoalsCompanion Function({
+      Value<int> id,
+      Value<int> targetSessions,
+      Value<int> targetMinutes,
+    });
+
+class $$WeeklyExerciseGoalsTableFilterComposer
+    extends Composer<_$AppDatabase, $WeeklyExerciseGoalsTable> {
+  $$WeeklyExerciseGoalsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get targetSessions => $composableBuilder(
+    column: $table.targetSessions,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get targetMinutes => $composableBuilder(
+    column: $table.targetMinutes,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$WeeklyExerciseGoalsTableOrderingComposer
+    extends Composer<_$AppDatabase, $WeeklyExerciseGoalsTable> {
+  $$WeeklyExerciseGoalsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get targetSessions => $composableBuilder(
+    column: $table.targetSessions,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get targetMinutes => $composableBuilder(
+    column: $table.targetMinutes,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$WeeklyExerciseGoalsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $WeeklyExerciseGoalsTable> {
+  $$WeeklyExerciseGoalsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get targetSessions => $composableBuilder(
+    column: $table.targetSessions,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get targetMinutes => $composableBuilder(
+    column: $table.targetMinutes,
+    builder: (column) => column,
+  );
+}
+
+class $$WeeklyExerciseGoalsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $WeeklyExerciseGoalsTable,
+          WeeklyExerciseGoal,
+          $$WeeklyExerciseGoalsTableFilterComposer,
+          $$WeeklyExerciseGoalsTableOrderingComposer,
+          $$WeeklyExerciseGoalsTableAnnotationComposer,
+          $$WeeklyExerciseGoalsTableCreateCompanionBuilder,
+          $$WeeklyExerciseGoalsTableUpdateCompanionBuilder,
+          (
+            WeeklyExerciseGoal,
+            BaseReferences<
+              _$AppDatabase,
+              $WeeklyExerciseGoalsTable,
+              WeeklyExerciseGoal
+            >,
+          ),
+          WeeklyExerciseGoal,
+          PrefetchHooks Function()
+        > {
+  $$WeeklyExerciseGoalsTableTableManager(
+    _$AppDatabase db,
+    $WeeklyExerciseGoalsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$WeeklyExerciseGoalsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$WeeklyExerciseGoalsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$WeeklyExerciseGoalsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<int> targetSessions = const Value.absent(),
+                Value<int> targetMinutes = const Value.absent(),
+              }) => WeeklyExerciseGoalsCompanion(
+                id: id,
+                targetSessions: targetSessions,
+                targetMinutes: targetMinutes,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required int targetSessions,
+                required int targetMinutes,
+              }) => WeeklyExerciseGoalsCompanion.insert(
+                id: id,
+                targetSessions: targetSessions,
+                targetMinutes: targetMinutes,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$WeeklyExerciseGoalsTable, WeeklyExerciseGoal>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $WeeklyExerciseGoalsTable,
+                    WeeklyExerciseGoal
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$WeeklyExerciseGoalsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $WeeklyExerciseGoalsTable,
+      WeeklyExerciseGoal,
+      $$WeeklyExerciseGoalsTableFilterComposer,
+      $$WeeklyExerciseGoalsTableOrderingComposer,
+      $$WeeklyExerciseGoalsTableAnnotationComposer,
+      $$WeeklyExerciseGoalsTableCreateCompanionBuilder,
+      $$WeeklyExerciseGoalsTableUpdateCompanionBuilder,
+      (
+        WeeklyExerciseGoal,
+        BaseReferences<
+          _$AppDatabase,
+          $WeeklyExerciseGoalsTable,
+          WeeklyExerciseGoal
+        >,
+      ),
+      WeeklyExerciseGoal,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -1559,4 +2014,6 @@ class $AppDatabaseManager {
       $$ExerciseEntriesTableTableManager(_db, _db.exerciseEntries);
   $$FavoriteFoodsTableTableManager get favoriteFoods =>
       $$FavoriteFoodsTableTableManager(_db, _db.favoriteFoods);
+  $$WeeklyExerciseGoalsTableTableManager get weeklyExerciseGoals =>
+      $$WeeklyExerciseGoalsTableTableManager(_db, _db.weeklyExerciseGoals);
 }

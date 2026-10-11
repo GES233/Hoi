@@ -22,6 +22,14 @@ Future<void> showAddExerciseEntryDialog(BuildContext context) {
   );
 }
 
+/// 弹出「编辑每周运动目标」对话框
+Future<void> showEditWeeklyGoalsDialog(BuildContext context) {
+  return showDialog<void>(
+    context: context,
+    builder: (_) => const EditWeeklyGoalsDialog(),
+  );
+}
+
 class AddFoodEntryDialog extends ConsumerStatefulWidget {
   const AddFoodEntryDialog({super.key});
 
@@ -214,6 +222,78 @@ class _AddExerciseEntryDialogState
               ),
             ],
           ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(onPressed: _submit, child: const Text('保存')),
+      ],
+    );
+  }
+}
+
+class EditWeeklyGoalsDialog extends ConsumerStatefulWidget {
+  const EditWeeklyGoalsDialog({super.key});
+
+  @override
+  ConsumerState<EditWeeklyGoalsDialog> createState() =>
+      _EditWeeklyGoalsDialogState();
+}
+
+class _EditWeeklyGoalsDialogState
+    extends ConsumerState<EditWeeklyGoalsDialog> {
+  final _formKey = GlobalKey<FormState>();
+  String? _sessions;
+  String? _minutes;
+
+  Future<void> _submit() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    final form = _formKey.currentState!;
+    form.save();
+    await ref.read(databaseProvider).updateWeeklyGoals(
+          targetSessions: int.parse(_sessions!),
+          targetMinutes: int.parse(_minutes!),
+        );
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  String? _validateGoal(String? v, String label) {
+    if (v == null || v.trim().isEmpty) return '请输入$label';
+    if ((int.tryParse(v.trim()) ?? 0) <= 0) return '$label需大于 0';
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final goals = ref.watch(weeklyGoalsProvider).value;
+
+    return AlertDialog(
+      title: const Text('每周运动目标'),
+      content: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextFormField(
+              initialValue: goals?.targetSessions.toString(),
+              decoration: const InputDecoration(labelText: '每周运动次数'),
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              validator: (v) => _validateGoal(v, '目标次数'),
+              onSaved: (v) => _sessions = v?.trim(),
+            ),
+            TextFormField(
+              initialValue: goals?.targetMinutes.toString(),
+              decoration: const InputDecoration(labelText: '每周运动时长 (分钟)'),
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              validator: (v) => _validateGoal(v, '目标时长'),
+              onSaved: (v) => _minutes = v?.trim(),
+            ),
+          ],
         ),
       ),
       actions: [

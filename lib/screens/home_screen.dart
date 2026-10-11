@@ -38,6 +38,8 @@ class HomeScreen extends ConsumerWidget {
             totalBurned: totalBurned,
           ),
           const SizedBox(height: 16),
+          const _WeeklyExerciseCard(),
+          const SizedBox(height: 16),
           _FoodSection(entries: foodEntries),
           const SizedBox(height: 16),
           _ExerciseSection(entries: exerciseEntries),
@@ -234,6 +236,150 @@ class _ExerciseSection extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 本周运动卡片：落实点阵 + 次数/时长目标进度
+class _WeeklyExerciseCard extends ConsumerWidget {
+  const _WeeklyExerciseCard();
+
+  static const _weekdayLabels = ['一', '二', '三', '四', '五', '六', '日'];
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final date = ref.watch(selectedDateProvider);
+    final goals = ref.watch(weeklyGoalsProvider).value ??
+        AppDatabase.defaultWeeklyGoals;
+    final weekEntries = ref.watch(weekExerciseEntriesProvider).value ?? [];
+
+    final weekStart = AppDatabase.weekStart(date);
+    final weekEnd = weekStart.add(const Duration(days: 6));
+    // 有运动记录的日期集合，用于点亮落实点阵
+    final activeDays = weekEntries.map((e) => AppDatabase.dateOnly(e.date)).toSet();
+    final totalMinutes =
+        weekEntries.fold<int>(0, (sum, e) => sum + e.durationMinutes);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text('本周运动', style: Theme.of(context).textTheme.titleMedium),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.edit_outlined, size: 20),
+                  tooltip: '编辑目标',
+                  onPressed: () => showEditWeeklyGoalsDialog(context),
+                ),
+              ],
+            ),
+            Text(
+              '${DateFormat('M月d日').format(weekStart)} – '
+              '${DateFormat('M月d日').format(weekEnd)}',
+              style: Theme.of(context).textTheme.labelSmall,
+            ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                for (var i = 0; i < 7; i++)
+                  _WeekDayDot(
+                    label: _weekdayLabels[i],
+                    active: activeDays
+                        .contains(weekStart.add(Duration(days: i))),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _GoalProgress(
+              label: '运动次数',
+              current: weekEntries.length,
+              target: goals.targetSessions,
+              unit: '次',
+            ),
+            const SizedBox(height: 12),
+            _GoalProgress(
+              label: '运动时长',
+              current: totalMinutes,
+              target: goals.targetMinutes,
+              unit: '分钟',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 周内某一天的落实情况：有记录点亮，否则灰色
+class _WeekDayDot extends StatelessWidget {
+  const _WeekDayDot({required this.label, required this.active});
+
+  final String label;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      children: [
+        Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: active ? scheme.primary : scheme.surfaceContainerHighest,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(label, style: Theme.of(context).textTheme.labelSmall),
+      ],
+    );
+  }
+}
+
+/// 单项目标进度条（自动封顶到 100%）
+class _GoalProgress extends StatelessWidget {
+  const _GoalProgress({
+    required this.label,
+    required this.current,
+    required this.target,
+    required this.unit,
+  });
+
+  final String label;
+  final int current;
+  final int target;
+  final String unit;
+
+  @override
+  Widget build(BuildContext context) {
+    final value =
+        target <= 0 ? 0.0 : (current / target).clamp(0.0, 1.0).toDouble();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(label, style: Theme.of(context).textTheme.labelMedium),
+            Text(
+              '$current / $target $unit',
+              style: Theme.of(context).textTheme.labelMedium,
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        LinearProgressIndicator(
+          value: value,
+          minHeight: 6,
+          borderRadius: BorderRadius.circular(3),
+        ),
+      ],
     );
   }
 }

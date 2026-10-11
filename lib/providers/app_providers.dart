@@ -26,24 +26,66 @@ final foodEntriesProvider = StreamProvider.autoDispose<List<FoodEntry>>((ref) {
   return ref.watch(databaseProvider).watchFoodEntries(date);
 });
 
-final exerciseEntriesProvider =
-    StreamProvider.autoDispose<List<ExerciseEntry>>((ref) {
-  final date = ref.watch(selectedDateProvider);
-  return ref.watch(databaseProvider).watchExerciseEntries(date);
-});
-
 final favoriteFoodsProvider = StreamProvider.autoDispose<List<FavoriteFood>>(
   (ref) => ref.watch(databaseProvider).watchFavoriteFoods(),
 );
-
-/// 选中日期所在周（周一至周日）的全部运动记录
-final weekExerciseEntriesProvider =
-    StreamProvider.autoDispose<List<ExerciseEntry>>((ref) {
-  final date = ref.watch(selectedDateProvider);
-  return ref.watch(databaseProvider).watchExerciseEntriesInWeek(date);
-});
 
 /// 每周运动目标（次数 + 分钟）
 final weeklyGoalsProvider = StreamProvider.autoDispose<WeeklyExerciseGoal>(
   (ref) => ref.watch(databaseProvider).watchWeeklyGoals(),
 );
+
+/// 当前进行中的训练（至多一场）
+final ongoingWorkoutProvider = StreamProvider.autoDispose<Workout?>(
+  (ref) => ref.watch(databaseProvider).watchOngoingWorkout(),
+);
+
+/// 选中日期当天的已完成训练
+final completedWorkoutsProvider =
+    StreamProvider.autoDispose<List<Workout>>((ref) {
+  final date = ref.watch(selectedDateProvider);
+  return ref.watch(databaseProvider).watchCompletedWorkouts(date);
+});
+
+/// 选中日期所在周（周一至周日）的已完成训练
+final weekWorkoutsProvider = StreamProvider.autoDispose<List<Workout>>((ref) {
+  final date = ref.watch(selectedDateProvider);
+  return ref.watch(databaseProvider).watchCompletedWorkoutsInWeek(date);
+});
+
+/// 指定训练的动作列表
+final workoutExercisesProvider = StreamProvider.autoDispose
+    .family<List<WorkoutExercise>, int>(
+  (ref, workoutId) =>
+      ref.watch(databaseProvider).watchWorkoutExercises(workoutId),
+);
+
+/// 指定训练的组列表（跨全部动作，按动作顺序、组顺序排列）
+final workoutSetsProvider =
+    StreamProvider.autoDispose.family<List<WorkoutSet>, int>(
+  (ref, workoutId) => ref.watch(databaseProvider).watchWorkoutSets(workoutId),
+);
+
+/// 全部运动方案（按创建时间排序）
+final exercisePlansProvider = StreamProvider.autoDispose<List<ExercisePlan>>(
+  (ref) => ref.watch(databaseProvider).watchExercisePlans(),
+);
+
+/// 选中日期的每日状态（含方案达标与休息标记）
+final dailyStatusProvider = StreamProvider.autoDispose<DailyStatus>((ref) {
+  final date = ref.watch(selectedDateProvider);
+  return ref.watch(databaseProvider).watchDailyStatus(date);
+});
+
+/// 选中日期的休息标记
+final restMarkProvider = StreamProvider.autoDispose<RestMark?>((ref) {
+  final date = ref.watch(selectedDateProvider);
+  return ref.watch(databaseProvider).watchRestMark(date);
+});
+
+/// 选中日期各方案的达标评估（key 为方案 id）
+final dailyPlanEvaluationsProvider =
+    StreamProvider.autoDispose<Map<int, PlanEvaluation>>((ref) {
+  final date = ref.watch(selectedDateProvider);
+  return ref.watch(databaseProvider).watchDailyPlanEvaluations(date);
+});

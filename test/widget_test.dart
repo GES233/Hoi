@@ -46,13 +46,16 @@ void main() {
     await tester.pump();
   }
 
-  testWidgets('首页显示日期、汇总与空列表', (tester) async {
+  testWidgets('首页显示日期、入口按钮、汇总与空列表', (tester) async {
     await pumpHome(tester);
 
     expect(find.text(HomeScreen.formatDate(DateTime.now())), findsOneWidget);
+    expect(find.text('开始运动'), findsOneWidget);
+    expect(find.text('补记运动'), findsOneWidget);
     expect(find.text('总摄入'), findsOneWidget);
-    expect(find.text('总消耗'), findsOneWidget);
-    expect(find.text('净热量'), findsOneWidget);
+    // 汇总卡不再显示总消耗与净热量
+    expect(find.text('总消耗'), findsNothing);
+    expect(find.text('净热量'), findsNothing);
     expect(find.text('饮食记录'), findsOneWidget);
     expect(find.text('运动记录'), findsOneWidget);
     expect(find.text('暂无记录'), findsNWidgets(2));
@@ -60,7 +63,7 @@ void main() {
     await finishTest(tester);
   });
 
-  testWidgets('插入饮食和运动条目后汇总更新，删除后消失', (tester) async {
+  testWidgets('插入饮食和已完成训练后汇总更新，删除后消失', (tester) async {
     await pumpHome(tester);
     final today = AppDatabase.dateOnly(DateTime.now());
 
@@ -72,23 +75,20 @@ void main() {
         calories: const Value(140),
       ),
     );
-    await db.insertExerciseEntry(
-      ExerciseEntriesCompanion(
-        date: Value(today),
-        name: const Value('跑步'),
-        durationMinutes: const Value(30),
-        caloriesBurned: const Value(240),
-      ),
+    final workoutId =
+        await db.insertCompletedWorkout(date: today, totalSeconds: 1800);
+    await db.addWorkoutExercise(
+      workoutId,
+      name: '跑步',
+      category: ExerciseCategory.cardio,
     );
     await tester.pumpAndSettle();
 
     expect(find.text('早餐'), findsOneWidget);
     expect(find.text('鸡蛋'), findsOneWidget);
     expect(find.text('跑步'), findsOneWidget);
-    // 总摄入 140、总消耗 240、净热量 -100
-    expect(find.text('140'), findsOneWidget);
-    expect(find.text('240'), findsOneWidget);
-    expect(find.text('-100'), findsOneWidget);
+    expect(find.text('140'), findsOneWidget); // 总摄入
+    expect(find.text('总用时 30 分钟'), findsOneWidget);
 
     // 删除饮食条目
     await tester.tap(find.byIcon(Icons.delete_outline).first);
@@ -96,7 +96,6 @@ void main() {
     expect(find.text('鸡蛋'), findsNothing);
     expect(find.text('跑步'), findsOneWidget);
     expect(find.text('0'), findsOneWidget); // 总摄入归零
-    expect(find.text('-240'), findsOneWidget);
 
     await finishTest(tester);
   });
@@ -145,7 +144,7 @@ void main() {
     await finishTest(tester);
   });
 
-  testWidgets('本周运动卡片显示目标进度并随记录更新', (tester) async {
+  testWidgets('本周运动卡片按已完成训练统计次数与时长', (tester) async {
     await pumpHome(tester);
     final today = AppDatabase.dateOnly(DateTime.now());
 
@@ -154,14 +153,16 @@ void main() {
     expect(find.text('0 / 3 次'), findsOneWidget);
     expect(find.text('0 / 90 分钟'), findsOneWidget);
 
-    await db.insertExerciseEntry(
-      ExerciseEntriesCompanion(
-        date: Value(today),
-        name: const Value('跑步'),
-        durationMinutes: const Value(30),
-        caloriesBurned: const Value(240),
-      ),
-    );
+    // 一场训练含多个动作多组，次数仍只计 1
+    final workoutId =
+        await db.insertCompletedWorkout(date: today, totalSeconds: 1800);
+    final e1 = await db.addWorkoutExercise(
+        workoutId, name: '深蹲', category: ExerciseCategory.resistance);
+    final e2 = await db.addWorkoutExercise(
+        workoutId, name: '跑步', category: ExerciseCategory.cardio);
+    await db.addWorkoutSet(e1, reps: 10);
+    await db.addWorkoutSet(e1, reps: 10);
+    await db.addWorkoutSet(e2, durationSeconds: 1800);
     await tester.pumpAndSettle();
 
     expect(find.text('1 / 3 次'), findsOneWidget);
@@ -172,6 +173,18 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('1 / 5 次'), findsOneWidget);
     expect(find.text('30 / 120 分钟'), findsOneWidget);
+
+    await finishTest(tester);
+  });
+
+  testWidgets('有进行中训练时入口显示「继续训练」', (tester) async {
+    await pumpHome(tester);
+    expect(find.text('开始运动'), findsOneWidget);
+
+    await db.startWorkout();
+    await tester.pumpAndSettle();
+    expect(find.text('继续训练'), findsOneWidget);
+    expect(find.text('开始运动'), findsNothing);
 
     await finishTest(tester);
   });

@@ -3,12 +3,12 @@ import 'package:flutter/services.dart';
 
 import '../database/database.dart';
 
-/// 秒数格式化为 H:MM:SS（不足一小时为 M:SS），仅用于显示
+/// 秒数格式化为 H:MM:SS（不足一小时为 MM:SS，分钟零填充避免歧义），仅用于显示
 String formatElapsed(int seconds) {
   final h = seconds ~/ 3600;
   final m = (seconds % 3600) ~/ 60;
   final s = seconds % 60;
-  final mm = m.toString().padLeft(h > 0 ? 2 : 1, '0');
+  final mm = m.toString().padLeft(2, '0');
   final ss = s.toString().padLeft(2, '0');
   return h > 0 ? '$h:$mm:$ss' : '$mm:$ss';
 }
@@ -146,26 +146,54 @@ class _AddExerciseDialogState extends State<_AddExerciseDialog> {
   }
 }
 
-/// 弹出「添加组」对话框；次数 / 持续秒数 / 重量 / 备注均可选
-Future<SetDraft?> showAddWorkoutSetDialog(BuildContext context) {
+/// 弹出「添加组」对话框；次数 / 持续秒数 / 重量 / 备注均可选。
+/// [prefill] 非空时预填上一组的次数 / 时长 / 重量（不预填备注）
+Future<SetDraft?> showAddWorkoutSetDialog(BuildContext context,
+    {WorkoutSet? prefill}) {
   return showDialog<SetDraft>(
     context: context,
-    builder: (_) => const _AddSetDialog(),
+    builder: (_) => _AddSetDialog(prefill: prefill),
+  );
+}
+
+/// 弹出「编辑组」对话框：预填该组现有全部值（含备注），返回修改后的草稿
+Future<SetDraft?> showEditWorkoutSetDialog(BuildContext context, WorkoutSet set) {
+  return showDialog<SetDraft>(
+    context: context,
+    builder: (_) => _AddSetDialog(prefill: set, editing: true),
   );
 }
 
 class _AddSetDialog extends StatefulWidget {
-  const _AddSetDialog();
+  const _AddSetDialog({this.prefill, this.editing = false});
+
+  final WorkoutSet? prefill;
+
+  /// 编辑模式：改标题与按钮文案，并预填备注（添加模式预填不带备注）
+  final bool editing;
 
   @override
   State<_AddSetDialog> createState() => _AddSetDialogState();
 }
 
 class _AddSetDialogState extends State<_AddSetDialog> {
-  final _repsController = TextEditingController();
-  final _durationController = TextEditingController();
-  final _weightController = TextEditingController();
-  final _noteController = TextEditingController();
+  late final TextEditingController _repsController;
+  late final TextEditingController _durationController;
+  late final TextEditingController _weightController;
+  late final TextEditingController _noteController;
+
+  @override
+  void initState() {
+    super.initState();
+    final p = widget.prefill;
+    String numText(num? v) => v == null ? '' : '$v';
+    _repsController = TextEditingController(text: numText(p?.reps));
+    _durationController =
+        TextEditingController(text: numText(p?.durationSeconds));
+    _weightController = TextEditingController(text: numText(p?.weightKg));
+    _noteController =
+        TextEditingController(text: widget.editing ? (p?.note ?? '') : '');
+  }
 
   @override
   void dispose() {
@@ -204,7 +232,7 @@ class _AddSetDialogState extends State<_AddSetDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('添加组'),
+      title: Text(widget.editing ? '编辑组' : '添加组'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -240,7 +268,10 @@ class _AddSetDialogState extends State<_AddSetDialog> {
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('取消'),
         ),
-        FilledButton(onPressed: _submit, child: const Text('添加')),
+        FilledButton(
+          onPressed: _submit,
+          child: Text(widget.editing ? '保存' : '添加'),
+        ),
       ],
     );
   }

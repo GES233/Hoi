@@ -142,6 +142,19 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
     }
   }
 
+  /// 编辑已保存的组（编辑模式，实时写库）
+  Future<void> _editSet(WorkoutSet set) async {
+    final draft = await showEditWorkoutSetDialog(context, set);
+    if (draft == null) return;
+    await ref.read(databaseProvider).updateWorkoutSet(
+          set.id,
+          reps: Value(draft.reps),
+          durationSeconds: Value(draft.durationSeconds),
+          weightKg: Value(draft.weightKg),
+          note: Value(draft.note),
+        );
+  }
+
   String _describeDraftSet(_DraftSet s) {
     final parts = <String>[];
     if ((s.reps ?? 0) > 0) parts.add('${s.reps} 次');
@@ -336,6 +349,7 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
                 dense: true,
                 contentPadding: EdgeInsets.zero,
                 title: Text(describeSet(set)),
+                onTap: () => _editSet(set),
                 trailing: IconButton(
                   icon: const Icon(Icons.close, size: 18),
                   tooltip: '删除组',
@@ -380,32 +394,35 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
     required List<Widget> sets,
     required VoidCallback onAddSet,
   }) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(title,
-                      style: Theme.of(context).textTheme.titleSmall),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 20),
-                  tooltip: '删除动作',
-                  onPressed: onDelete,
-                ),
-              ],
-            ),
-            ...sets,
-            TextButton.icon(
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('添加组'),
-              onPressed: onAddSet,
-            ),
-          ],
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(title,
+                        style: Theme.of(context).textTheme.titleSmall),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, size: 20),
+                    tooltip: '删除动作',
+                    onPressed: onDelete,
+                  ),
+                ],
+              ),
+              ...sets,
+              TextButton.icon(
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('添加组'),
+                onPressed: onAddSet,
+              ),
+            ],
+          ),
         ),
       ),
     );

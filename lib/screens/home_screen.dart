@@ -10,8 +10,9 @@ import 'plans_screen.dart';
 import 'workout_screen.dart';
 
 /// 首页：行动入口优先，不使用悬浮按钮。
-/// 顺序：日期导航（非今天可回今天）→ 今日方案 → 开始/补记入口 →
-/// 进行中的训练（与选中日期无关）→ 当日运动记录 → 饮食入口与摘要 → 本周概览
+/// 顺序：周条（选日期 + 本周落实点阵，非今天可回今天）→ 今日方案 →
+/// 开始/补记入口 → 进行中的训练（与选中日期无关）→ 当日运动记录 →
+/// 饮食入口与摘要 → 本周概览（次数/时长进度 + 点阵图例）
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -32,19 +33,18 @@ class HomeScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('饮食运动记录'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.flag_outlined),
-            tooltip: '运动方案',
+          TextButton(
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const PlansScreen()),
             ),
+            child: const Text('方案'),
           ),
         ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _DateSwitcher(date: date),
+          _WeekStrip(date: date),
           const SizedBox(height: 12),
           const _TodayPlanCard(),
           const SizedBox(height: 12),
@@ -68,6 +68,208 @@ class HomeScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// 周条：一行同时承担「选日期」与「看本周落实」。
+/// 左右箭头或横向滑动按周切换；点击日期文本弹 DatePicker；
+/// 未来日期不可选，也不允许切到本周之后
+class _WeekStrip extends ConsumerWidget {
+  const _WeekStrip({required this.date});
+
+  final DateTime date;
+
+  static const _weekdayLabels = ['一', '二', '三', '四', '五', '六', '日'];
+
+  Future<void> _pickDate(BuildContext context, WidgetRef ref) async {
+    final today = AppDatabase.dateOnly(DateTime.now());
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: date.isAfter(today) ? today : date,
+      firstDate: DateTime(2020),
+      lastDate: today,
+    );
+    if (picked != null) {
+      ref.read(selectedDateProvider.notifier).select(picked);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final statuses = ref.watch(weekDailyStatusProvider).value ?? {};
+    final today = AppDatabase.dateOnly(DateTime.now());
+    final weekStart = AppDatabase.weekStart(date);
+    final isToday = date == today;
+    // 不允许切到本周之后
+    final canGoNext = !weekStart
+        .add(const Duration(days: 7))
+        .isAfter(AppDatabase.weekStart(today));
+    final notifier = ref.read(selectedDateProvider.notifier);
+
+    return Column(
+      children: [
+        Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.chevron_left),
+              tooltip: '上一周',
+              visualDensity: VisualDensity.compact,
+              onPressed: () => notifier.shift(-7),
+            ),
+            Expanded(
+              child: InkWell(
+                onTap: () => _pickDate(context, ref),
+                child: Center(
+                  child: Text(
+                    HomeScreen.formatDate(date),
+                    style: Theme.of(context).textTheme.titleMedium,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            ),
+            if (!isToday)
+              TextButton(
+                onPressed: notifier.goToday,
+                child: const Text('回到今天'),
+              ),
+            IconButton(
+              icon: const Icon(Icons.chevron_right),
+              tooltip: '下一周',
+              visualDensity: VisualDensity.compact,
+              onPressed: canGoNext ? () => notifier.shift(7) : null,
+            ),
+          ],
+        ),
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onHorizontalDragEnd: (details) {
+            final v = details.primaryVelocity ?? 0;
+            if (v < -150) {
+              if (canGoNext) notifier.shift(7);
+            } else if (v > 150) {
+              notifier.shift(-7);
+            }
+          },
+          child: Row(
+            children: [
+              for (var i = 0; i < 7; i++)
+                _dayCell(
+                  context,
+                  ref,
+                  weekStart.add(Duration(days: i)),
+                  statuses[weekStart.add(Duration(days: i))] ??
+                      DailyStatus.none,
+                  today,
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 单日格子：星期标签 + 日期数字（选中为实心圆、今天加下划线）+ 状态点
+  Widget _dayCell(BuildContext context, WidgetRef ref, DateTime day,
+      DailyStatus status, DateTime today) {
+    final scheme = Theme.of(context).colorScheme;
+    final isSelected = day == date;
+    final isToday = day == today;
+    final isFuture = day.isAfter(today);
+    final labelStyle = Theme.of(context).textTheme.labelSmall;
+    return Expanded(
+      child: InkWell(
+        onTap: isFuture
+            ? null
+            : () => ref.read(selectedDateProvider.notifier).select(day),
+        child: Column(
+          children: [
+            Text(_weekdayLabels[day.weekday - 1], style: labelStyle),
+            Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isSelected ? scheme.primary : null,
+              ),
+              child: Center(
+                child: Container(
+                  decoration: isToday && !isSelected
+                      ? BoxDecoration(
+                          border: Border(
+                            bottom:
+                                BorderSide(color: scheme.primary, width: 2),
+                          ),
+                        )
+                      : null,
+                  child: Text(
+                    '${day.day}',
+                    style: labelStyle?.copyWith(
+                      color: isFuture
+                          ? scheme.outline
+                          : isSelected
+                              ? scheme.onPrimary
+                              : null,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 2),
+            SizedBox(
+              height: 14,
+              child: Center(child: _StatusDot(status: status)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 周条与图例共用的状态点：无记录（空心灰）/ 有记录未达最低（浅绿描边）/
+/// 最低达标（实心绿）/ 常规达标（实心绿 + 外圈）/ 休息（小月亮）。
+/// 不使用红色或叉号，未达标不表达为失败
+class _StatusDot extends StatelessWidget {
+  const _StatusDot({required this.status});
+
+  final DailyStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    switch (status) {
+      case DailyStatus.rest:
+        return Icon(Icons.bedtime_outlined, size: 12, color: scheme.secondary);
+      case DailyStatus.minDone:
+        return _circle(color: scheme.primary);
+      case DailyStatus.regularDone:
+        return Container(
+          width: 14,
+          height: 14,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: scheme.primary, width: 1.5),
+          ),
+          child: Center(child: _circle(size: 8, color: scheme.primary)),
+        );
+      case DailyStatus.recorded:
+        return _circle(border: scheme.primary);
+      case DailyStatus.noPlan:
+      case DailyStatus.none:
+        return _circle(border: scheme.outlineVariant);
+    }
+  }
+
+  static Widget _circle({double size = 10, Color? color, Color? border}) =>
+      Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color,
+          border: border != null ? Border.all(color: border, width: 1.5) : null,
+        ),
+      );
 }
 
 /// 「开始运动」与「补记运动」入口。
@@ -379,49 +581,6 @@ class _TodayPlanCard extends ConsumerWidget {
   }
 }
 
-/// 紧凑日期导航；仅当选中日期不是今天时提供「回到今天」
-class _DateSwitcher extends ConsumerWidget {
-  const _DateSwitcher({required this.date});
-
-  final DateTime date;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final isToday = date == AppDatabase.dateOnly(DateTime.now());
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        IconButton(
-          icon: const Icon(Icons.chevron_left),
-          tooltip: '前一天',
-          visualDensity: VisualDensity.compact,
-          onPressed: () =>
-              ref.read(selectedDateProvider.notifier).shift(-1),
-        ),
-        Flexible(
-          child: Text(
-            HomeScreen.formatDate(date),
-            style: Theme.of(context).textTheme.titleMedium,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-        IconButton(
-          icon: const Icon(Icons.chevron_right),
-          tooltip: '后一天',
-          visualDensity: VisualDensity.compact,
-          onPressed: () => ref.read(selectedDateProvider.notifier).shift(1),
-        ),
-        if (!isToday)
-          TextButton(
-            onPressed: () =>
-                ref.read(selectedDateProvider.notifier).goToday(),
-            child: const Text('回到今天'),
-          ),
-      ],
-    );
-  }
-}
-
 /// 饮食分区：含「添加饮食」入口与当日摄入小字摘要（热量摘要不作主页焦点）
 class _FoodSection extends ConsumerWidget {
   const _FoodSection({required this.entriesAsync});
@@ -562,6 +721,30 @@ class _WorkoutTile extends ConsumerWidget {
 
   final Workout workout;
 
+  /// 删除训练需确认：会级联删除动作与组，且不可撤销
+  Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('删除训练'),
+        content: const Text('将删除这次训练及其全部动作和组记录，确定删除吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await ref.read(databaseProvider).discardWorkout(workout.id);
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final exercises =
@@ -583,18 +766,16 @@ class _WorkoutTile extends ConsumerWidget {
       trailing: IconButton(
         icon: const Icon(Icons.delete_outline),
         tooltip: '删除',
-        onPressed: () => ref.read(databaseProvider).discardWorkout(workout.id),
+        onPressed: () => _confirmDelete(context, ref),
       ),
     );
   }
 }
 
-/// 本周运动卡片：落实点阵 + 次数/时长目标进度
+/// 本周运动卡片：次数/时长目标进度 + 点阵图例（点阵本身在顶部周条）。
 /// 次数按已完成训练计；时长只累计已记录总用时的训练，未知用时不推算
 class _WeeklyExerciseCard extends ConsumerWidget {
   const _WeeklyExerciseCard();
-
-  static const _weekdayLabels = ['一', '二', '三', '四', '五', '六', '日'];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -606,9 +787,6 @@ class _WeeklyExerciseCard extends ConsumerWidget {
     final weekStart = AppDatabase.weekStart(date);
     final weekEnd = weekStart.add(const Duration(days: 6));
     final weekWorkouts = weekAsync.value ?? [];
-    // 有已完成训练的日期集合，用于点亮落实点阵
-    final activeDays =
-        weekWorkouts.map((w) => AppDatabase.dateOnly(w.date)).toSet();
     final totalSeconds = weekWorkouts.fold<int>(
         0, (sum, w) => sum + (w.totalSeconds ?? 0));
     final totalMinutes = totalSeconds ~/ 60;
@@ -623,10 +801,9 @@ class _WeeklyExerciseCard extends ConsumerWidget {
               children: [
                 Text('本周运动', style: Theme.of(context).textTheme.titleMedium),
                 const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.edit_outlined, size: 20),
-                  tooltip: '编辑目标',
+                TextButton(
                   onPressed: () => showEditWeeklyGoalsDialog(context),
+                  child: const Text('调整目标'),
                 ),
               ],
             ),
@@ -648,18 +825,6 @@ class _WeeklyExerciseCard extends ConsumerWidget {
               )
             else ...[
               const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  for (var i = 0; i < 7; i++)
-                    _WeekDayDot(
-                      label: _weekdayLabels[i],
-                      active: activeDays
-                          .contains(weekStart.add(Duration(days: i))),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 16),
               _GoalProgress(
                 label: '运动次数',
                 current: weekWorkouts.length,
@@ -673,39 +838,40 @@ class _WeeklyExerciseCard extends ConsumerWidget {
                 target: goals.targetMinutes,
                 unit: '分钟',
               ),
+              const SizedBox(height: 12),
+              // 顶部周条点阵的图例
+              Wrap(
+                spacing: 12,
+                runSpacing: 4,
+                children: [
+                  _legendItem(context, DailyStatus.none, '无记录'),
+                  _legendItem(context, DailyStatus.recorded, '有记录'),
+                  _legendItem(context, DailyStatus.minDone, '最低达标'),
+                  _legendItem(context, DailyStatus.regularDone, '常规达标'),
+                  _legendItem(context, DailyStatus.rest, '休息'),
+                ],
+              ),
             ],
           ],
         ),
       ),
     );
   }
-}
 
-/// 周内某一天的落实情况：有记录点亮，否则灰色
-class _WeekDayDot extends StatelessWidget {
-  const _WeekDayDot({required this.label, required this.active});
-
-  final String label;
-  final bool active;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Column(
-      children: [
-        Container(
-          width: 12,
-          height: 12,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: active ? scheme.primary : scheme.surfaceContainerHighest,
+  static Widget _legendItem(
+          BuildContext context, DailyStatus status, String label) =>
+      Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 14,
+            height: 14,
+            child: Center(child: _StatusDot(status: status)),
           ),
-        ),
-        const SizedBox(height: 4),
-        Text(label, style: Theme.of(context).textTheme.labelSmall),
-      ],
-    );
-  }
+          const SizedBox(width: 4),
+          Text(label, style: Theme.of(context).textTheme.labelSmall),
+        ],
+      );
 }
 
 /// 单项目标进度条（自动封顶到 100%）

@@ -52,21 +52,24 @@ class PlansScreen extends ConsumerWidget {
               padding: const EdgeInsets.all(16),
               children: [
                 for (final p in plans)
-                  Card(
-                    child: ListTile(
-                      title: Text(p.name),
-                      subtitle: Text(
-                        '${p.exerciseName}（${p.category.label}） · '
-                        '${p.metric == PlanMetric.duration ? '时长' : '有效组数'} · '
-                        '${describePlanThresholds(p)}'
-                        '${p.note != null && p.note!.isNotEmpty ? '\n${p.note}' : ''}',
-                      ),
-                      isThreeLine: p.note != null && p.note!.isNotEmpty,
-                      onTap: () => showPlanFormDialog(context, editing: p),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.delete_outline),
-                        tooltip: '删除方案',
-                        onPressed: () => _confirmDelete(context, ref, p),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Card(
+                      child: ListTile(
+                        title: Text(p.name),
+                        subtitle: Text(
+                          '${p.exerciseName}（${p.category.label}） · '
+                          '${p.metric == PlanMetric.duration ? '时长' : '有效组数'} · '
+                          '${describePlanThresholds(p)}'
+                          '${p.note != null && p.note!.isNotEmpty ? '\n${p.note}' : ''}',
+                        ),
+                        isThreeLine: p.note != null && p.note!.isNotEmpty,
+                        onTap: () => showPlanFormDialog(context, editing: p),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.delete_outline),
+                          tooltip: '删除方案',
+                          onPressed: () => _confirmDelete(context, ref, p),
+                        ),
                       ),
                     ),
                   ),

@@ -24,7 +24,13 @@ void main() {
   });
 
   tearDown(() async {
-    if (!dbClosed) await db.close();
+    // 测试中途失败时不会走到 finishTest（路由未弹出、组件树未卸载），
+    // 此时 db.close() 可能挂起；加超时兜底，避免整个测试文件卡死 10 分钟
+    if (!dbClosed) {
+      await db
+          .close()
+          .timeout(const Duration(seconds: 15), onTimeout: () {});
+    }
   });
 
   Future<void> pumpHome(WidgetTester tester, {DateTime Function()? clock}) async {
@@ -53,6 +59,22 @@ void main() {
     dbClosed = true;
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
+  }
+
+  /// 在周条中选中目标日期：先用周箭头切到目标所在周，再点日期数字。
+  /// 周条不允许前往未来，这里只用于选中过去日期
+  Future<void> selectDateInStrip(WidgetTester tester, DateTime target) async {
+    final today = AppDatabase.dateOnly(DateTime.now());
+    final weeksBack = AppDatabase.weekStart(today)
+            .difference(AppDatabase.weekStart(target))
+            .inDays ~/
+        7;
+    for (var i = 0; i < weeksBack; i++) {
+      await tester.tap(find.byIcon(Icons.chevron_left));
+      await tester.pumpAndSettle();
+    }
+    await tester.tap(find.text('${target.day}'));
+    await tester.pumpAndSettle();
   }
 
   /// 预置一个组数型方案与一场关联它的已完成训练
@@ -163,10 +185,10 @@ void main() {
     expect(find.text('米饭'), findsOneWidget);
 
     // 切到前一天：显示「回到今天」与历史日期辅助文案
-    await tester.tap(find.byIcon(Icons.chevron_left));
-    await tester.pumpAndSettle();
+    final yesterday = today.subtract(const Duration(days: 1));
+    await selectDateInStrip(tester, yesterday);
     expect(
-      find.text(HomeScreen.formatDate(today.subtract(const Duration(days: 1)))),
+      find.text(HomeScreen.formatDate(yesterday)),
       findsOneWidget,
     );
     expect(find.text('米饭'), findsNothing);
@@ -304,8 +326,7 @@ void main() {
     final yesterday = today.subtract(const Duration(days: 1));
 
     // 选中昨天后进入补记
-    await tester.tap(find.byIcon(Icons.chevron_left));
-    await tester.pumpAndSettle();
+    await selectDateInStrip(tester, yesterday);
     await tester.tap(find.text('补记运动'));
     await tester.pumpAndSettle();
 
@@ -375,12 +396,12 @@ void main() {
     await pumpFrames();
     expect(find.textContaining('平板支撑'), findsOneWidget);
 
-    // 开始一组 → 假时钟推进 90 秒 → 结束并保存
+    // 开始一组 → 假时钟推进 90 秒 → 完成本组
     await tester.tap(find.text('开始一组'));
     await pumpFrames();
     fakeNow = fakeNow.add(const Duration(seconds: 90));
     await tester.pump(const Duration(seconds: 1)); // 让显示随 Timer 刷新一次
-    await tester.tap(find.text('结束并保存'));
+    await tester.tap(find.text('完成本组'));
     await pumpFrames();
     await pumpFrames();
 
@@ -392,6 +413,152 @@ void main() {
 
     // 返回首页后再收尾：推入的路由未弹出时 db.close() 可能挂起，
     // 且训练页的 periodic Timer 需要随组件树卸载取消
+    await tester.pageBack();
+    await pumpFrames();
+
+    await finishTest(tester);
+  });
+
+  testWidgets('首页删除训练需二次确认', (tester) async {
+    await pumpHome(tester);
+    final today = AppDatabase.dateOnly(DateTime.now());
+    final workoutId =
+        await db.insertCompletedWorkout(date: today, totalSeconds: 600);
+    await db.addWorkoutExercise(
+        workoutId, name: '跑步', category: ExerciseCategory.cardio);
+    await tester.pumpAndSettle();
+    expect(find.text('跑步'), findsOneWidget);
+
+    Future<void> tapDelete() => tester.tap(find.descendant(
+          of: find.ancestor(
+              of: find.text('跑步'), matching: find.byType(ListTile)),
+          matching: find.byIcon(Icons.delete_outline),
+        ));
+
+    // 取消：不删除
+    await tapDelete();
+    await tester.pumpAndSettle();
+    expect(find.text('删除训练'), findsOneWidget);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(find.text('跑步'), findsOneWidget);
+
+    // 确认：级联删除
+    await tapDelete();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+    expect(find.text('跑步'), findsNothing);
+
+    await finishTest(tester);
+  });
+
+  testWidgets('周条停留在本周时不可切到下一周', (tester) async {
+    await pumpHome(tester);
+    final next = tester.widget<IconButton>(find.ancestor(
+      of: find.byIcon(Icons.chevron_right),
+      matching: find.byType(IconButton),
+    ));
+    expect(next.onPressed, isNull);
+    // 上一周可用
+    final prev = tester.widget<IconButton>(find.ancestor(
+      of: find.byIcon(Icons.chevron_left),
+      matching: find.byType(IconButton),
+    ));
+    expect(prev.onPressed, isNotNull);
+
+    await finishTest(tester);
+  });
+
+  testWidgets('训练页实时显示方案进度，达到最低时给出反馈', (tester) async {
+    final planId = await db.insertExercisePlan(
+      name: '俯卧撑保底',
+      exerciseName: '俯卧撑',
+      category: ExerciseCategory.resistance,
+      metric: PlanMetric.sets,
+      minThreshold: 1,
+      regularThreshold: 3,
+    );
+    final plan = await db.getExercisePlan(planId);
+    await pumpHome(tester);
+    await db.startWorkout(plan: plan);
+    await tester.pumpAndSettle();
+
+    // 训练页有常驻 periodic Timer，进入后不能 pumpAndSettle
+    Future<void> pumpFrames() async {
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+    }
+
+    await tester.tap(find.text('继续训练'));
+    await pumpFrames();
+    await pumpFrames();
+    expect(find.text('关联方案：俯卧撑保底'), findsOneWidget);
+    expect(find.text('0 / 1 组'), findsOneWidget); // 最低 1 组，当前 0
+
+    // startWorkout 已按方案预添加绑定动作「俯卧撑」，直接记一组 → 达到最低
+    await tester.tap(find.text('添加组'));
+    await pumpFrames();
+    await tester.enterText(find.byType(TextField).first, '10');
+    await tester.tap(find.text('添加'));
+    await pumpFrames();
+    await pumpFrames();
+
+    expect(find.text('今天的最低方案已完成'), findsOneWidget); // SnackBar 反馈
+    expect(find.text('已完成'), findsOneWidget); // 最低行变为已完成
+    expect(find.text('1 / 3 组'), findsOneWidget); // 常规行继续显示进度
+
+    await tester.pageBack();
+    await pumpFrames();
+
+    await finishTest(tester);
+  });
+
+  testWidgets('训练页点按组行可编辑该组（含备注）', (tester) async {
+    await pumpHome(tester);
+
+    Future<void> pumpFrames() async {
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+    }
+
+    await tester.tap(find.text('开始运动'));
+    await pumpFrames();
+    await pumpFrames();
+
+    // 添加动作并手填一组
+    await tester.tap(find.text('添加动作'));
+    await pumpFrames();
+    await tester.enterText(find.byType(TextFormField).first, '俯卧撑');
+    await tester.tap(find.text('添加'));
+    await pumpFrames();
+    await pumpFrames();
+    await tester.tap(find.text('添加组'));
+    await pumpFrames();
+    await tester.enterText(find.byType(TextField).first, '10');
+    await tester.tap(find.text('添加'));
+    await pumpFrames();
+    await pumpFrames();
+    expect(find.textContaining('第 1 组'), findsOneWidget);
+
+    // 点按组行 → 编辑对话框预填原值，修改次数并补备注
+    await tester.tap(find.textContaining('第 1 组'));
+    await pumpFrames();
+    expect(find.text('编辑组'), findsOneWidget);
+    expect(find.text('10'), findsOneWidget); // 次数已预填
+    await tester.enterText(find.byType(TextField).first, '12');
+    await tester.enterText(
+        find.byType(TextField).last, '前 8 个全程，后 4 个退阶');
+    await tester.tap(find.text('保存'));
+    await pumpFrames();
+    await pumpFrames();
+
+    final workout = await db.getOngoingWorkout();
+    final sets = await db.getWorkoutSets(workout!.id);
+    expect(sets.single.reps, 12);
+    expect(sets.single.note, '前 8 个全程，后 4 个退阶');
+    expect(find.textContaining('第 1 组　12 次'), findsOneWidget);
+
     await tester.pageBack();
     await pumpFrames();
 

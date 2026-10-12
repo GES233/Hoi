@@ -21,6 +21,9 @@ class SelectedDateNotifier extends Notifier<DateTime> {
   void shift(int days) =>
       state = AppDatabase.dateOnly(state.add(Duration(days: days)));
 
+  /// 直接选中某天（DatePicker 用）
+  void select(DateTime date) => state = AppDatabase.dateOnly(date);
+
   /// 回到今天
   void goToday() => state = AppDatabase.dateOnly(DateTime.now());
 }
@@ -88,6 +91,13 @@ final dailyStatusProvider = StreamProvider.autoDispose<DailyStatus>((ref) {
 final restMarkProvider = StreamProvider.autoDispose<RestMark?>((ref) {
   final date = ref.watch(selectedDateProvider);
   return ref.watch(databaseProvider).watchRestMark(date);
+});
+
+/// 选中日期所在周（周一至周日）每天的每日状态，供周条点阵使用
+final weekDailyStatusProvider =
+    StreamProvider.autoDispose<Map<DateTime, DailyStatus>>((ref) {
+  final date = ref.watch(selectedDateProvider);
+  return ref.watch(databaseProvider).watchWeekDailyStatus(date);
 });
 
 /// 选中日期各方案的达标评估（key 为方案 id）

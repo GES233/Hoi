@@ -817,6 +817,36 @@ class AppDatabase extends _$AppDatabase {
     ]).asyncMap((_) => computeDailyStatus(day));
   }
 
+  /// 监听所在周（周一至周日）每天的每日状态，key 为归一化日期。
+  /// 本地数据量小，用整表级触发 + 逐日重算换实现简单
+  Stream<Map<DateTime, DailyStatus>> watchWeekDailyStatus(DateTime date) {
+    final start = weekStart(date);
+    return _watchAny([
+      watchExercisePlans(),
+      select(restMarks).watch(),
+      watchCompletedWorkoutsInWeek(date),
+      select(workoutExercises).watch(),
+      select(workoutSets).watch(),
+    ]).asyncMap((_) async {
+      final result = <DateTime, DailyStatus>{};
+      for (var i = 0; i < 7; i++) {
+        final day = start.add(Duration(days: i));
+        var status = await computeDailyStatus(day);
+        if (status == DailyStatus.noPlan) {
+          // 未设方案时点阵仍区分「有记录 / 无记录」
+          final done = await (select(workouts)
+                ..where((t) =>
+                    t.status.equalsValue(WorkoutStatus.completed) &
+                    t.date.equals(day)))
+              .get();
+          status = done.isNotEmpty ? DailyStatus.recorded : DailyStatus.none;
+        }
+        result[day] = status;
+      }
+      return result;
+    });
+  }
+
   /// 当天各方案的达标情况：key 为方案 id，值为当日关联训练的最高档评估；
   /// 当天无关联完成训练的方案不出现在结果中（UI 显示「未开始」）
   Stream<Map<int, PlanEvaluation>> watchDailyPlanEvaluations(DateTime date) {

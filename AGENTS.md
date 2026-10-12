@@ -30,11 +30,11 @@ lib/
 ├── main.dart                    # 入口：ProviderScope + MaterialApp（绿色主题）
 ├── database/database.dart       # drift 表定义与查询（database.g.dart 为生成文件，勿手改）
 ├── providers/app_providers.dart # riverpod providers（databaseProvider / selectedDateProvider（含 shift/select/goToday）/ setStopwatchClockProvider / weekDailyStatusProvider 等各 StreamProvider）
-├── screens/home_screen.dart     # 首页：周条（选日期 + 本周落实五状态点阵，不可前往未来，点日期弹 DatePicker）、今日方案卡、开始/补记入口、进行中训练卡、当日运动记录（删除需确认）、饮食分区（含添加入口与摄入摘要）、本周运动卡（次数/时长进度 + 点阵图例）；无 FAB，入口全在内容流内
-├── screens/workout_screen.dart  # 进行中训练页：顶部紧凑总用时行 + 暂停训练/继续训练/结束训练；关联方案实时进度卡（达最低变成功态并弹一次反馈）；动作卡含组序号与汇总、组级小秒表高亮条（暂停本组/完成本组，计时只存内存）、手填添加组（预填上一组）与再来一组、组点按编辑/左滑删除+撤销；放弃训练/删除动作收进 ⋮ 菜单且有确认
+├── screens/home_screen.dart     # 首页（组装者）：周条（选日期 + 本周落实五状态点阵，不可前往未来，点日期弹 DatePicker）、今日方案卡、开始/补记入口、进行中训练卡、当日运动记录（删除需确认）、饮食分区、本周运动卡；无 FAB，入口全在内容流内；卡片实现拆在 widgets/
+├── screens/workout_screen.dart  # 进行中训练页（组装者）：顶部紧凑总用时行 + 暂停训练/继续训练/结束训练；组级小秒表计时只存内存、全场至多一组在计时；放弃训练/删除动作收进 ⋮ 菜单且有确认；进度卡与动作卡实现拆在 widgets/
 ├── screens/log_workout_screen.dart # 补记与编辑已完成训练（补记时动组本地暂存、保存时一次写入；编辑模式组可点按编辑；可关联/取消方案）
 ├── screens/plans_screen.dart       # 最低／常规方案管理：列表 + 新增/编辑/删除对话框
-└── widgets/                     # add_entry_dialogs.dart（饮食+周目标对话框）、workout_dialogs.dart（添加动作/组对话框与格式化）、set_stopwatch.dart（组级秒表纯 Dart 类，时钟可注入）
+└── widgets/                     # week_strip.dart（周条 WeekStrip + 状态点 StatusDot）、home_cards.dart（今日方案卡 TodayPlanCard、饮食分区 FoodSection、本周运动卡 WeeklyExerciseCard/GoalProgress）、home_workout_cards.dart（开始/补记入口 WorkoutEntryButtons、进行中训练卡 OngoingWorkoutCard、当日运动记录 WorkoutSection/WorkoutTile）、workout_cards.dart（方案实时进度卡 PlanProgressCard——达最低变成功态并弹一次反馈、动作卡 ExerciseCard——含组序号与汇总、组级小秒表高亮条、手填添加组预填上一组与再来一组、组点按编辑/左滑删除+撤销）、finish_workout_dialog.dart（结束训练对话框）、add_entry_dialogs.dart（饮食+周目标对话框）、workout_dialogs.dart（添加/编辑动作/组对话框与格式化）、set_stopwatch.dart（组级秒表纯 Dart 类，时钟可注入）
 test/widget_test.dart            # 首页 widget 测试（内存数据库 + provider override）
 test/database_test.dart          # 训练记录数据库测试（NativeDatabase.memory()，注入固定 now）
 test/set_stopwatch_test.dart     # 组级秒表纯 Dart 测试（注入假时钟）

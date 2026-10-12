@@ -51,6 +51,20 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   drift_dev: ^2.35.1
   build_runner: ^2.16.2
+  flutter_launcher_icons: ^0.14.4
+
+# 应用图标：dart run flutter_launcher_icons 重新生成（改源图后）
+flutter_launcher_icons:
+  android: true
+  image_path: "assets/icon/app_icon.png"
+  # Android 自适应图标：前景是缩放 66% 居中的整图，背景与原图底色一致，
+  # 保证圆形/圆角裁切后橙点仍在安全区内
+  adaptive_icon_background: "#1A3B28"
+  adaptive_icon_foreground: "assets/icon/foreground.png"
+  windows:
+    generate: true
+    image_path: "assets/icon/app_icon.png"
+    icon_size: 256
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

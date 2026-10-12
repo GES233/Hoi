@@ -21,6 +21,7 @@ flutter analyze                 # 提交前需无 error
 flutter test                    # widget 测试
 flutter run -d windows          # 桌面运行
 flutter emulators --launch Medium_Phone && flutter run   # Android 模拟器
+dart run flutter_launcher_icons   # 更换应用图标源图（assets/icon/）后重新生成各平台图标
 ```
 
 ## 目录结构

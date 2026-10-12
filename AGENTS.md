@@ -30,7 +30,7 @@ lib/
 ├── main.dart                    # 入口：ProviderScope + MaterialApp（绿色主题）
 ├── database/database.dart       # drift 表定义与查询（database.g.dart 为生成文件，勿手改）
 ├── providers/app_providers.dart # riverpod providers（databaseProvider / selectedDateProvider / setStopwatchClockProvider / 各 StreamProvider）
-├── screens/home_screen.dart     # 首页：日期导航（非今天可回今天）、今日方案卡、开始/补记入口、进行中训练卡、当日运动记录、饮食分区（含添加入口与摄入摘要）、本周概览；无 FAB，入口全在内容流内
+├── screens/home_screen.dart     # 首页：日期导航（非今天可回今天）、今日方案卡、开始/补记入口、进行中训练卡、当日运动记录、饮食分区（含添加入口与摄入摘要）、本周运动卡（落实点阵 + 次数/时长进度）；无 FAB，入口全在内容流内
 ├── screens/workout_screen.dart  # 进行中训练页：顶部紧凑总用时行 + 暂停/继续/结束；动作卡含组级小秒表（开始一组/暂停/结束并保存，计时只存内存）、手填添加组
 ├── screens/log_workout_screen.dart # 补记与编辑已完成训练（补记时动组本地暂存、保存时一次写入；可关联/取消方案）
 ├── screens/plans_screen.dart       # 最低／常规方案管理：列表 + 新增/编辑/删除对话框
@@ -52,7 +52,7 @@ test/set_stopwatch_test.dart     # 组级秒表纯 Dart 测试（注入假时钟
 
 - **widget 测试 pending timer**：drift 取消查询流会调度零时长 Timer，组件树卸载前必须先 `await db.close()`（见 `test/widget_test.dart` 的 `finishTest`）。
 - **widget 测试 `db.close()` 挂起（FakeAsync）**：`StreamQueryStore.close()` 会等待零时长 `Timer.run` 完成，测试里 push 过路由时该定时器可能等不到 pump，`await db.close()` 永不返回（表现为整个测试 10 分钟超时）。根治办法：widget 测试用 `DatabaseConnection(NativeDatabase.memory(), closeStreamsSynchronously: true)` 构造数据库，关闭流同步完成、不走 Timer（见 `test/widget_test.dart` 的 setUp）。
-- **ListView 懒加载截断断言**：首页内容超出视口后，离屏 widget 不在树中，`find.text` 会找不到。`pumpHome` 已把测试视口加高（1080x2200）；若视口装不下，先 `tester.scrollUntilVisible` 再断言。
+- **ListView 懒加载截断断言**：首页内容超出视口后，离屏 widget 不在树中，`find.text` 会找不到。`pumpHome` 已把测试视口加高（1080x2400）；若视口装不下，先 `tester.scrollUntilVisible` 再断言。
 - **flutter_tester 残留**：测试被中断后残留进程可能锁死 `build/native_assets/windows/sqlite3.dll`，导致下次测试失败。执行 `taskkill //F //IM flutter_tester.exe` 后重跑。
 - **训练页常驻 Timer 与 pumpAndSettle**：`workout_screen.dart` 有每秒刷新显示的 `Timer.periodic`，widget 测试进入该页后不能再 `pumpAndSettle`（永不 settle），用固定时长 `pump()` 推进；收尾前 `pageBack` 弹出该页让 Timer 随 dispose 取消。
 - **Android 工具链**：SDK 在 `D:\Langs\AndroidSDK`（见 `android/local.properties` 的 `sdk.dir`），需 cmdline-tools 并已接受 licenses（`flutter doctor --android-licenses`）。

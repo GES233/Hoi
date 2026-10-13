@@ -13,7 +13,10 @@ void main() {
   late AppDatabase db;
 
   setUp(() {
-    db = AppDatabase(NativeDatabase.memory());
+    db = AppDatabase.withOptions(
+      executor: NativeDatabase.memory(),
+      seedBuiltIns: false,
+    );
   });
 
   tearDown(() async {
@@ -173,9 +176,56 @@ void main() {
     expect(workout.feeling, '有点累');
   });
 
-  test('v3 升到 v4 会重置旧表，第二次打开不会再次清空', () async {
+  test('首次打开会激活动作目录与每周基础运动预设', () async {
     await db.close();
-    final directory = Directory.systemTemp.createTempSync('hoi-v4-migration-');
+    final directory = Directory.systemTemp.createTempSync('hoi-presets-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final file = File('${directory.path}/presets.sqlite');
+    final seeded = AppDatabase(NativeDatabase(file));
+    addTearDown(seeded.close);
+
+    final exercises = await seeded.watchExercises().first;
+    expect(exercises, hasLength(AppDatabase.builtInExercisePresets.length));
+    expect(
+      exercises.map((exercise) => exercise.builtinKey).toSet(),
+      AppDatabase.builtInExercisePresets.map((preset) => preset.key).toSet(),
+    );
+
+    final rules = await seeded.watchRuleSets().first;
+    expect(rules, hasLength(1));
+    expect(rules.single.presetKey, 'weekly_consistency');
+    final expression = seeded.decodeRuleExpression(rules.single) as AllRule;
+    expect(expression.children, hasLength(2));
+
+    final progress = await seeded.evaluateRuleSets(t0);
+    expect(progress.single.evaluation.children[0].actual, 0);
+    expect(progress.single.evaluation.children[0].target, 3);
+    expect(progress.single.evaluation.children[1].actual, 0);
+    expect(progress.single.evaluation.children[1].target, 90 * 60);
+
+    expect(
+      await seeded.activateRuleSetPreset('weekly_consistency'),
+      rules.single.id,
+    );
+    await seeded.archiveRuleSet(rules.single.id, now: t0);
+    final reactivated = await seeded.activateRuleSetPreset(
+      'weekly_consistency',
+      effectiveFromDate: t0,
+      now: t0,
+    );
+    expect(reactivated, isNot(rules.single.id));
+    expect(await seeded.watchRuleSets().first, hasLength(1));
+
+    await seeded.close();
+    final reopened = AppDatabase(NativeDatabase(file));
+    addTearDown(reopened.close);
+    expect(await reopened.watchRuleSets().first, hasLength(1));
+    expect(await reopened.watchExercises().first, hasLength(exercises.length));
+  });
+
+  test('v3 升到 v5 会重置旧表，第二次打开不会再次清空', () async {
+    await db.close();
+    final directory = Directory.systemTemp.createTempSync('hoi-v5-reset-');
     addTearDown(() => directory.deleteSync(recursive: true));
     final file = File('${directory.path}/legacy.sqlite');
     final legacyTables = [
@@ -188,8 +238,8 @@ void main() {
       'favorite_foods',
       'food_entries',
     ];
-    final migrated = AppDatabase(
-      NativeDatabase(
+    final migrated = AppDatabase.withOptions(
+      executor: NativeDatabase(
         file,
         setup: (raw) {
           for (final table in legacyTables) {
@@ -199,6 +249,7 @@ void main() {
           raw.execute('PRAGMA user_version = 3');
         },
       ),
+      seedBuiltIns: false,
     );
     final exerciseId = await migrated.insertExercise(
       name: '迁移后动作',
@@ -209,9 +260,95 @@ void main() {
     expect(await migrated.select(migrated.exercises).get(), hasLength(1));
     await migrated.close();
 
-    final reopened = AppDatabase(NativeDatabase(file));
+    final reopened = AppDatabase.withOptions(
+      executor: NativeDatabase(file),
+      seedBuiltIns: false,
+    );
     addTearDown(reopened.close);
     expect((await reopened.getExercise(exerciseId))?.name, '迁移后动作');
+  });
+
+  test('v4 升到 v5 保留动作与规则，并移除旧周目标表', () async {
+    await db.close();
+    final directory = Directory.systemTemp.createTempSync('hoi-v5-migration-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final file = File('${directory.path}/v4.sqlite');
+    final migrated = AppDatabase.withOptions(
+      executor: NativeDatabase(
+        file,
+        setup: (raw) {
+          raw.execute('''
+            CREATE TABLE exercises (
+              id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+              name TEXT NOT NULL,
+              category TEXT NOT NULL,
+              tracking_type TEXT NOT NULL,
+              load_convention TEXT NOT NULL,
+              reps_convention TEXT NOT NULL,
+              archived_at INTEGER NULL,
+              created_at INTEGER NOT NULL
+            )
+          ''');
+          raw.execute('''
+            CREATE TABLE rule_sets (
+              id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+              name TEXT NOT NULL,
+              period TEXT NOT NULL,
+              effective_from_date INTEGER NOT NULL,
+              effective_until_date INTEGER NULL,
+              combine_mode TEXT NOT NULL,
+              expression_json TEXT NOT NULL,
+              evaluation_policy_version INTEGER NOT NULL,
+              archived_at INTEGER NULL,
+              created_at INTEGER NOT NULL
+            )
+          ''');
+          raw.execute('''
+            CREATE TABLE weekly_exercise_goals (
+              id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+              target_sessions INTEGER NOT NULL,
+              target_minutes INTEGER NOT NULL
+            )
+          ''');
+          raw.execute('''
+            INSERT INTO exercises (
+              name, category, tracking_type, load_convention,
+              reps_convention, created_at
+            ) VALUES ('旧动作', 'resistance', 'reps', 'none', 'total', 0)
+          ''');
+          raw.execute('''
+            INSERT INTO rule_sets (
+              name, period, effective_from_date, combine_mode,
+              expression_json, evaluation_policy_version, created_at
+            ) VALUES (
+              '旧目标', 'week', 0, 'all',
+              '{"type":"all","children":[{"type":"comparison","metric":"session_count","operator":">=","target":1}]}',
+              1, 0
+            )
+          ''');
+          raw.execute('''
+            INSERT INTO weekly_exercise_goals (target_sessions, target_minutes)
+            VALUES (3, 90)
+          ''');
+          raw.execute('PRAGMA user_version = 4');
+        },
+      ),
+      seedBuiltIns: false,
+    );
+    addTearDown(migrated.close);
+
+    final exercise = (await migrated.select(migrated.exercises).get()).single;
+    final rule = (await migrated.select(migrated.ruleSets).get()).single;
+    expect(exercise.name, '旧动作');
+    expect(exercise.builtinKey, isNull);
+    expect(rule.name, '旧目标');
+    expect(rule.presetKey, isNull);
+    final oldTable = await migrated
+        .customSelect(
+          "SELECT name FROM sqlite_master WHERE name = 'weekly_exercise_goals'",
+        )
+        .get();
+    expect(oldTable, isEmpty);
   });
 
   group('阶段 1：动作身份与模板版本', () {
@@ -670,7 +807,10 @@ void main() {
       );
       final file = File('${directory.path}/rules.sqlite');
       try {
-        final first = AppDatabase(NativeDatabase(file));
+        final first = AppDatabase.withOptions(
+          executor: NativeDatabase(file),
+          seedBuiltIns: false,
+        );
         await first.createRuleSet(
           name: '每周三次',
           period: RulePeriod.week,
@@ -686,7 +826,10 @@ void main() {
         );
         await first.close();
 
-        final second = AppDatabase(NativeDatabase(file));
+        final second = AppDatabase.withOptions(
+          executor: NativeDatabase(file),
+          seedBuiltIns: false,
+        );
         final saved = (await second.watchRuleSets().first).single;
         expect(saved.name, '每周三次');
         expect(second.decodeRuleExpression(saved), isA<AllRule>());

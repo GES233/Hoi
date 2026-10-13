@@ -158,6 +158,56 @@ class RuleSetProgress {
   final RuleEvaluation evaluation;
 }
 
+class BuiltInExercisePreset {
+  const BuiltInExercisePreset({
+    required this.key,
+    required this.name,
+    required this.category,
+    required this.trackingType,
+    this.loadConvention = LoadConvention.none,
+    this.repsConvention = RepsConvention.total,
+  });
+
+  final String key;
+  final String name;
+  final ExerciseCategory category;
+  final TrackingType trackingType;
+  final LoadConvention loadConvention;
+  final RepsConvention repsConvention;
+}
+
+class RuleSetPreset {
+  const RuleSetPreset({
+    required this.key,
+    required this.name,
+    required this.description,
+    required this.period,
+    required this.combineMode,
+  });
+
+  final String key;
+  final String name;
+  final String description;
+  final RulePeriod period;
+  final RuleCombineMode combineMode;
+
+  RuleNode buildExpression() => switch (key) {
+    'weekly_consistency' => AllRule(const [
+      ComparisonRule(
+        metricId: 'session_count',
+        operator: ComparisonOperator.greaterOrEqual,
+        target: 3,
+      ),
+      ComparisonRule(
+        metricId: 'session_duration',
+        operator: ComparisonOperator.greaterOrEqual,
+        target: 90 * 60,
+      ),
+    ]),
+    _ => throw StateError('未知周期目标预设：$key'),
+  };
+}
+
 /// 每日状态：未设方案 / 无记录 / 休息 / 已记录未达最低 / 达最低 / 达常规
 enum DailyStatus { noPlan, none, rest, recorded, minDone, regularDone }
 
@@ -179,16 +229,10 @@ class FavoriteFoods extends Table {
   IntColumn get calories => integer()();
 }
 
-/// 每周运动目标（次数 + 分钟），全表仅一行；空表时使用 [AppDatabase.defaultWeeklyGoals]
-class WeeklyExerciseGoals extends Table {
-  IntColumn get id => integer().autoIncrement()();
-  IntColumn get targetSessions => integer()();
-  IntColumn get targetMinutes => integer()();
-}
-
 /// 可归档的动作目录；历史引用永不随归档删除
 class Exercises extends Table {
   IntColumn get id => integer().autoIncrement()();
+  TextColumn get builtinKey => text().nullable()();
   TextColumn get name => text()();
   TextColumn get category => textEnum<ExerciseCategory>()();
   TextColumn get trackingType => textEnum<TrackingType>()();
@@ -340,6 +384,7 @@ class RestMarks extends Table {
 /// 日／周周期目标；表达式使用受控 Rule AST JSON，不执行任意代码。
 class RuleSets extends Table {
   IntColumn get id => integer().autoIncrement()();
+  TextColumn get presetKey => text().nullable()();
   TextColumn get name => text()();
   TextColumn get period => textEnum<RulePeriod>()();
   DateTimeColumn get effectiveFromDate => dateTime()();
@@ -355,7 +400,6 @@ class RuleSets extends Table {
   tables: [
     FoodEntries,
     FavoriteFoods,
-    WeeklyExerciseGoals,
     Exercises,
     WorkoutTemplates,
     TemplateVersions,
@@ -369,12 +413,19 @@ class RuleSets extends Table {
   ],
 )
 class AppDatabase extends _$AppDatabase {
-  AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
+  AppDatabase([QueryExecutor? executor])
+    : seedBuiltIns = true,
+      super(executor ?? _openConnection());
+
+  AppDatabase.withOptions({QueryExecutor? executor, this.seedBuiltIns = true})
+    : super(executor ?? _openConnection());
+
+  final bool seedBuiltIns;
 
   static QueryExecutor _openConnection() => driftDatabase(name: 'hoi_tracker');
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -395,7 +446,16 @@ class AppDatabase extends _$AppDatabase {
           await m.deleteTable(table);
         }
         await m.createAll();
+      } else if (from < 5) {
+        await m.addColumn(exercises, exercises.builtinKey);
+        await m.addColumn(ruleSets, ruleSets.presetKey);
+        await m.deleteTable('weekly_exercise_goals');
       }
+    },
+    beforeOpen: (_) async {
+      if (!seedBuiltIns) return;
+      await _ensureBuiltInExercises();
+      await _ensureDefaultRulePreset();
     },
   );
 
@@ -408,12 +468,133 @@ class AppDatabase extends _$AppDatabase {
     return day.subtract(Duration(days: day.weekday - 1));
   }
 
-  /// 未设置目标时的默认值：每周 3 次、90 分钟
-  static const defaultWeeklyGoals = WeeklyExerciseGoal(
-    id: 1,
-    targetSessions: 3,
-    targetMinutes: 90,
-  );
+  static const builtInExercisePresets = [
+    BuiltInExercisePreset(
+      key: 'walking',
+      name: '步行',
+      category: ExerciseCategory.cardio,
+      trackingType: TrackingType.duration,
+    ),
+    BuiltInExercisePreset(
+      key: 'running',
+      name: '跑步',
+      category: ExerciseCategory.cardio,
+      trackingType: TrackingType.distance,
+    ),
+    BuiltInExercisePreset(
+      key: 'cycling',
+      name: '骑行',
+      category: ExerciseCategory.cardio,
+      trackingType: TrackingType.distance,
+    ),
+    BuiltInExercisePreset(
+      key: 'jump_rope',
+      name: '跳绳',
+      category: ExerciseCategory.cardio,
+      trackingType: TrackingType.duration,
+    ),
+    BuiltInExercisePreset(
+      key: 'push_up',
+      name: '俯卧撑',
+      category: ExerciseCategory.resistance,
+      trackingType: TrackingType.reps,
+      loadConvention: LoadConvention.bodyweight,
+    ),
+    BuiltInExercisePreset(
+      key: 'bodyweight_squat',
+      name: '自重深蹲',
+      category: ExerciseCategory.resistance,
+      trackingType: TrackingType.reps,
+      loadConvention: LoadConvention.bodyweight,
+    ),
+    BuiltInExercisePreset(
+      key: 'lunge',
+      name: '弓步',
+      category: ExerciseCategory.resistance,
+      trackingType: TrackingType.reps,
+      loadConvention: LoadConvention.bodyweight,
+      repsConvention: RepsConvention.perSide,
+    ),
+    BuiltInExercisePreset(
+      key: 'pull_up',
+      name: '引体向上',
+      category: ExerciseCategory.resistance,
+      trackingType: TrackingType.reps,
+      loadConvention: LoadConvention.bodyweight,
+    ),
+    BuiltInExercisePreset(
+      key: 'plank',
+      name: '平板支撑',
+      category: ExerciseCategory.core,
+      trackingType: TrackingType.duration,
+      loadConvention: LoadConvention.bodyweight,
+    ),
+    BuiltInExercisePreset(
+      key: 'dead_hang',
+      name: '悬垂',
+      category: ExerciseCategory.functional,
+      trackingType: TrackingType.duration,
+      loadConvention: LoadConvention.bodyweight,
+    ),
+    BuiltInExercisePreset(
+      key: 'bench_press',
+      name: '卧推',
+      category: ExerciseCategory.resistance,
+      trackingType: TrackingType.reps,
+      loadConvention: LoadConvention.external,
+    ),
+    BuiltInExercisePreset(
+      key: 'dumbbell_row',
+      name: '哑铃划船',
+      category: ExerciseCategory.resistance,
+      trackingType: TrackingType.reps,
+      loadConvention: LoadConvention.external,
+      repsConvention: RepsConvention.perSide,
+    ),
+  ];
+
+  static const ruleSetPresets = [
+    RuleSetPreset(
+      key: 'weekly_consistency',
+      name: '每周基础运动',
+      description: '每周至少训练 3 次，并累计记录 90 分钟训练用时',
+      period: RulePeriod.week,
+      combineMode: RuleCombineMode.all,
+    ),
+  ];
+
+  Future<void> _ensureBuiltInExercises() async {
+    final existing = await (select(
+      exercises,
+    )..where((exercise) => exercise.builtinKey.isNotNull())).get();
+    final keys = existing.map((exercise) => exercise.builtinKey).toSet();
+    for (final preset in builtInExercisePresets) {
+      if (keys.contains(preset.key)) continue;
+      await insertExercise(
+        builtinKey: preset.key,
+        name: preset.name,
+        category: preset.category,
+        trackingType: preset.trackingType,
+        loadConvention: preset.loadConvention,
+        repsConvention: preset.repsConvention,
+      );
+    }
+  }
+
+  Future<void> _ensureDefaultRulePreset() async {
+    final preset = ruleSetPresets.first;
+    final existing =
+        await (select(ruleSets)
+              ..where((rule) => rule.presetKey.equals(preset.key))
+              ..limit(1))
+            .getSingleOrNull();
+    if (existing == null) {
+      await activateRuleSetPreset(
+        preset.key,
+        effectiveFromDate: DateTime(2000),
+      );
+    }
+  }
 
   // ---- 饮食 ----
 
@@ -440,38 +621,6 @@ class AppDatabase extends _$AppDatabase {
         target: [favoriteFoods.name],
       ),
     );
-  }
-
-  /// 监听每周运动目标；空表时返回 [defaultWeeklyGoals]
-  Stream<WeeklyExerciseGoal> watchWeeklyGoals() => (select(
-    weeklyExerciseGoals,
-  )..limit(1)).watchSingleOrNull().map((goal) => goal ?? defaultWeeklyGoals);
-
-  /// 更新每周运动目标；空表时插入首行
-  Future<void> updateWeeklyGoals({
-    required int targetSessions,
-    required int targetMinutes,
-  }) async {
-    final existing = await (select(
-      weeklyExerciseGoals,
-    )..limit(1)).getSingleOrNull();
-    if (existing == null) {
-      await into(weeklyExerciseGoals).insert(
-        WeeklyExerciseGoalsCompanion(
-          targetSessions: Value(targetSessions),
-          targetMinutes: Value(targetMinutes),
-        ),
-      );
-    } else {
-      await (update(
-        weeklyExerciseGoals,
-      )..where((t) => t.id.equals(existing.id))).write(
-        WeeklyExerciseGoalsCompanion(
-          targetSessions: Value(targetSessions),
-          targetMinutes: Value(targetMinutes),
-        ),
-      );
-    }
   }
 
   // ---- 训练 ----
@@ -736,6 +885,7 @@ class AppDatabase extends _$AppDatabase {
           workoutId: workout.id,
           date: workout.date,
           completed: true,
+          totalSeconds: workout.totalSeconds,
           exercises: [
             for (final exercise in actualExercises)
               MetricExerciseFact(
@@ -976,10 +1126,21 @@ class AppDatabase extends _$AppDatabase {
             ..orderBy([(e) => OrderingTerm.asc(e.name)]))
           .watch();
 
+  Future<List<Exercise>> getExercises({bool includeArchived = false}) =>
+      (select(exercises)
+            ..where(
+              (e) => includeArchived
+                  ? const Constant(true)
+                  : e.archivedAt.isNull(),
+            )
+            ..orderBy([(e) => OrderingTerm.asc(e.name)]))
+          .get();
+
   Future<Exercise?> getExercise(int id) =>
       (select(exercises)..where((e) => e.id.equals(id))).getSingleOrNull();
 
   Future<int> insertExercise({
+    String? builtinKey,
     required String name,
     required ExerciseCategory category,
     required TrackingType trackingType,
@@ -991,6 +1152,7 @@ class AppDatabase extends _$AppDatabase {
     if (cleanName.isEmpty) throw ArgumentError.value(name, 'name', '动作名称不能为空');
     return into(exercises).insert(
       ExercisesCompanion.insert(
+        builtinKey: Value(builtinKey),
         name: cleanName,
         category: category,
         trackingType: trackingType,
@@ -1414,6 +1576,7 @@ class AppDatabase extends _$AppDatabase {
       (select(ruleSets)..where((rule) => rule.id.equals(id))).getSingleOrNull();
 
   Future<int> createRuleSet({
+    String? presetKey,
     required String name,
     required RulePeriod period,
     required DateTime effectiveFromDate,
@@ -1433,6 +1596,7 @@ class AppDatabase extends _$AppDatabase {
     );
     return into(ruleSets).insert(
       RuleSetsCompanion.insert(
+        presetKey: Value(presetKey),
         name: name.trim(),
         period: period,
         effectiveFromDate: dateOnly(effectiveFromDate),
@@ -1484,6 +1648,31 @@ class AppDatabase extends _$AppDatabase {
       (update(ruleSets)..where((rule) => rule.id.equals(id))).write(
         RuleSetsCompanion(archivedAt: Value(now ?? DateTime.now())),
       );
+
+  Future<int> activateRuleSetPreset(
+    String key, {
+    DateTime? effectiveFromDate,
+    DateTime? now,
+  }) async {
+    final matches = ruleSetPresets.where((item) => item.key == key);
+    if (matches.isEmpty) throw ArgumentError.value(key, 'key', '未知周期目标预设');
+    final preset = matches.first;
+    final active =
+        await (select(ruleSets)..where(
+              (rule) => rule.presetKey.equals(key) & rule.archivedAt.isNull(),
+            ))
+            .getSingleOrNull();
+    if (active != null) return active.id;
+    return createRuleSet(
+      presetKey: key,
+      name: preset.name,
+      period: preset.period,
+      effectiveFromDate: effectiveFromDate ?? dateOnly(now ?? DateTime.now()),
+      combineMode: preset.combineMode,
+      expression: preset.buildExpression(),
+      now: now,
+    );
+  }
 
   RuleNode decodeRuleExpression(RuleSet ruleSet) => RuleNode.fromJson(
     Map<String, Object?>.from(jsonDecode(ruleSet.expressionJson) as Map),

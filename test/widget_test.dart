@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/intl.dart';
 
 import 'package:hoi/database/database.dart';
+import 'package:hoi/domain/rules/rule_ast.dart';
 import 'package:hoi/providers/app_providers.dart';
 import 'package:hoi/screens/home_screen.dart';
 
@@ -16,11 +17,12 @@ void main() {
   setUp(() {
     // closeStreamsSynchronously：关闭查询流时不走零时长 Timer，
     // 避免 FakeAsync 下 db.close() 等待永不触发的定时器而卡死（页面跳转后会触发该路径）
-    db = AppDatabase(
-      DatabaseConnection(
+    db = AppDatabase.withOptions(
+      executor: DatabaseConnection(
         NativeDatabase.memory(),
         closeStreamsSynchronously: true,
       ),
+      seedBuiltIns: false,
     );
     dbClosed = false;
   });
@@ -284,14 +286,19 @@ void main() {
     await finishTest(tester);
   });
 
-  testWidgets('本周运动卡片按已完成训练统计次数与时长', (tester) async {
-    await pumpHome(tester);
+  testWidgets('每周目标预设与本周概览按已完成训练统计次数与时长', (tester) async {
     final today = AppDatabase.dateOnly(DateTime.now());
+    await db.activateRuleSetPreset(
+      'weekly_consistency',
+      effectiveFromDate: AppDatabase.weekStart(today),
+    );
+    await pumpHome(tester);
 
-    // 空表时使用默认目标：每周 3 次、90 分钟
+    // 周期目标来自可编辑的 RuleSet 预设，周卡只显示本周事实概览。
+    expect(find.text('每周基础运动'), findsOneWidget);
+    expect(find.text('0/3 次 · 0/90 分钟'), findsOneWidget);
     expect(find.text('本周运动'), findsOneWidget);
-    expect(find.text('0 / 3 次'), findsOneWidget);
-    expect(find.text('0 / 90 分钟'), findsOneWidget);
+    expect(find.text('0 次 · 已记录 0 分钟'), findsOneWidget);
 
     // 一场训练含多个动作多组，次数仍只计 1
     final workoutId = await db.insertCompletedWorkout(
@@ -313,14 +320,32 @@ void main() {
     await db.addWorkoutSet(e2, durationSeconds: 1800);
     await tester.pumpAndSettle();
 
-    expect(find.text('1 / 3 次'), findsOneWidget);
-    expect(find.text('30 / 90 分钟'), findsOneWidget);
+    expect(find.text('1/3 次 · 30/90 分钟'), findsOneWidget);
+    expect(find.text('1 次 · 已记录 30 分钟'), findsOneWidget);
 
-    // 修改目标后进度按新目标显示
-    await db.updateWeeklyGoals(targetSessions: 5, targetMinutes: 120);
+    // 激活后的预设是普通 RuleSet，可以按用户需要修改。
+    final rule = (await db.select(db.ruleSets).get()).single;
+    await db.updateRuleSetDefinition(
+      rule.id,
+      name: rule.name,
+      period: RulePeriod.week,
+      effectiveFromDate: rule.effectiveFromDate,
+      combineMode: RuleCombineMode.all,
+      expression: AllRule(const [
+        ComparisonRule(
+          metricId: 'session_count',
+          operator: ComparisonOperator.greaterOrEqual,
+          target: 5,
+        ),
+        ComparisonRule(
+          metricId: 'session_duration',
+          operator: ComparisonOperator.greaterOrEqual,
+          target: 120 * 60,
+        ),
+      ]),
+    );
     await tester.pumpAndSettle();
-    expect(find.text('1 / 5 次'), findsOneWidget);
-    expect(find.text('30 / 120 分钟'), findsOneWidget);
+    expect(find.text('1/5 次 · 30/120 分钟'), findsOneWidget);
 
     await finishTest(tester);
   });
@@ -415,6 +440,12 @@ void main() {
   testWidgets('组级小秒表：开始一组→结束并保存写入时长组；大秒表已降级', (tester) async {
     // 假时钟注入组级秒表，不依赖真实等待
     var fakeNow = DateTime(2026, 10, 5, 10, 0, 0);
+    final plankId = await db.insertExercise(
+      name: '平板支撑',
+      category: ExerciseCategory.core,
+      trackingType: TrackingType.duration,
+      loadConvention: LoadConvention.bodyweight,
+    );
     await pumpHome(tester, clock: () => fakeNow);
 
     // 训练页有常驻 periodic Timer（每秒刷新显示），进入后不能 pumpAndSettle，
@@ -442,7 +473,10 @@ void main() {
     // 添加动作
     await tester.tap(find.text('添加动作'));
     await pumpFrames();
-    await tester.enterText(find.byType(TextFormField).first, '平板支撑');
+    await tester.tap(find.text('新建自定义动作'));
+    await pumpFrames();
+    await tester.tap(find.text('平板支撑 · 时长').last);
+    await pumpFrames();
     await tester.tap(find.text('添加'));
     await pumpFrames();
     await pumpFrames();
@@ -458,7 +492,10 @@ void main() {
     await pumpFrames();
 
     final workout = await db.getOngoingWorkout();
-    final sets = await db.getWorkoutSets(workout!.id);
+    final exercises = await db.getWorkoutExercises(workout!.id);
+    final sets = await db.getWorkoutSets(workout.id);
+    expect(exercises.single.catalogExerciseId, plankId);
+    expect(exercises.single.loadConventionSnapshot, LoadConvention.bodyweight);
     expect(sets, hasLength(1));
     expect(sets.single.durationSeconds, 90);
     expect(AppDatabase.isValidSet(sets.single), isTrue);

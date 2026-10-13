@@ -49,6 +49,7 @@ void main() {
           workoutId: 1,
           date: start,
           completed: true,
+          totalSeconds: 1800,
           exercises: [
             exercise(
               id: 1,
@@ -72,6 +73,7 @@ void main() {
           workoutId: 2,
           date: start.add(const Duration(days: 2)),
           completed: true,
+          totalSeconds: 3600,
           exercises: [
             exercise(
               id: 1,
@@ -91,12 +93,14 @@ void main() {
           workoutId: 3,
           date: start.add(const Duration(days: 4)),
           completed: true,
+          totalSeconds: null,
           exercises: const [],
         ),
         MetricSessionFact(
           workoutId: 4,
           date: start.subtract(const Duration(days: 1)),
           completed: true,
+          totalSeconds: null,
           exercises: const [],
         ),
       ],
@@ -106,6 +110,7 @@ void main() {
   test('内置指标声明稳定 ID、单位、聚合和缺失策略', () {
     expect(metrics.definitions.map((definition) => definition.metricId), [
       'session_count',
+      'session_duration',
       'valid_set_count',
       'reps',
       'duration',
@@ -130,6 +135,30 @@ void main() {
     );
     expect(value.value, 3);
     expect(value.unit, 'session');
+  });
+
+  test('session_duration 读取整场用时，未知时不从动作组推算', () {
+    final knownContext = MetricContext(
+      periodStart: context.periodStart,
+      periodEndExclusive: context.periodEndExclusive,
+      sessions: context.sessions.take(2).toList(),
+    );
+    final known = metrics.evaluate(
+      'session_duration',
+      1,
+      knownContext,
+      const MetricFilters(),
+    );
+    expect(known.value, 5400);
+
+    final missing = metrics.evaluate(
+      'session_duration',
+      1,
+      context,
+      const MetricFilters(),
+    );
+    expect(missing.insufficientData, isTrue);
+    expect(missing.missingFields, ['total_seconds']);
   });
 
   test('指标按 exerciseId 过滤，跳过组与零值组不算有效组', () {
@@ -165,6 +194,7 @@ void main() {
           workoutId: 1,
           date: start,
           completed: true,
+          totalSeconds: 900,
           exercises: [
             exercise(
               id: 3,
@@ -243,6 +273,7 @@ void main() {
           workoutId: 1,
           date: start,
           completed: true,
+          totalSeconds: null,
           exercises: [
             exercise(
               id: 2,

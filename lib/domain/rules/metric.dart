@@ -67,12 +67,14 @@ class MetricSessionFact {
     required this.workoutId,
     required this.date,
     required this.completed,
+    required this.totalSeconds,
     required this.exercises,
   });
 
   final int workoutId;
   final DateTime date;
   final bool completed;
+  final int? totalSeconds;
   final List<MetricExerciseFact> exercises;
 }
 
@@ -185,6 +187,22 @@ Iterable<MetricExerciseFact> _matchingExercises(
       (filters.category == null || exercise.category == filters.category),
 );
 
+bool _sessionMatchesFilters(MetricSessionFact session, MetricFilters filters) {
+  final exercises = _matchingExercises(session, filters);
+  final matchesExercise = filters.exerciseId == null && filters.category == null
+      ? true
+      : exercises.isNotEmpty;
+  final matchesRole =
+      filters.setRole == null ||
+      exercises.any(
+        (exercise) => exercise.sets.any(
+          (set) =>
+              set.setStatus == 'completed' && set.setRole == filters.setRole,
+        ),
+      );
+  return matchesExercise && matchesRole;
+}
+
 Iterable<MetricSetFact> _matchingCompletedSets(
   MetricContext context,
   MetricFilters filters,
@@ -255,24 +273,42 @@ final _builtInDefinitions = <MetricDefinition>[
     compute: (context, filters) {
       final ids = <int>{};
       for (final session in context.completedSessions) {
-        final exercises = _matchingExercises(session, filters);
-        final matches = filters.exerciseId == null && filters.category == null
-            ? session.exercises.isNotEmpty || filters.setRole == null
-            : exercises.isNotEmpty;
-        final matchesRole =
-            filters.setRole == null ||
-            exercises.any(
-              (exercise) => exercise.sets.any(
-                (set) =>
-                    set.setStatus == 'completed' &&
-                    set.setRole == filters.setRole,
-              ),
-            );
-        if (matches && matchesRole) ids.add(session.workoutId);
+        if (_sessionMatchesFilters(session, filters)) {
+          ids.add(session.workoutId);
+        }
       }
       return MetricValue.available(
         value: ids.length,
         unit: 'session',
+        definitionVersion: 1,
+      );
+    },
+  ),
+  MetricDefinition(
+    metricId: 'session_duration',
+    name: '训练总时长',
+    unit: 'second',
+    inputScope: MetricInputScope.sessions,
+    aggregation: MetricAggregation.sum,
+    definitionVersion: 1,
+    missingDataPolicy: MissingDataPolicy.insufficientWhenMatchedFactMissing,
+    compute: (context, filters) {
+      var total = 0;
+      for (final session in context.completedSessions) {
+        if (!_sessionMatchesFilters(session, filters)) continue;
+        final seconds = session.totalSeconds;
+        if (seconds == null) {
+          return const MetricValue.insufficient(
+            unit: 'second',
+            definitionVersion: 1,
+            missingFields: ['total_seconds'],
+          );
+        }
+        total += seconds;
+      }
+      return MetricValue.available(
+        value: total,
+        unit: 'second',
         definitionVersion: 1,
       );
     },

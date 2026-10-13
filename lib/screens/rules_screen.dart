@@ -26,6 +26,59 @@ String _operatorLabel(ComparisonOperator operator) => switch (operator) {
 class RulesScreen extends ConsumerWidget {
   const RulesScreen({super.key});
 
+  Future<void> _showPresets(
+    BuildContext context,
+    WidgetRef ref,
+    List<RuleSet> activeRules,
+  ) {
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('周期目标预设'),
+        content: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final preset in AppDatabase.ruleSetPresets)
+                Builder(
+                  builder: (context) {
+                    final active = activeRules.any(
+                      (rule) => rule.presetKey == preset.key,
+                    );
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(preset.name),
+                      subtitle: Text(preset.description),
+                      trailing: active
+                          ? const Icon(Icons.check_circle_outline)
+                          : FilledButton.tonal(
+                              onPressed: () async {
+                                await ref
+                                    .read(databaseProvider)
+                                    .activateRuleSetPreset(preset.key);
+                                if (dialogContext.mounted) {
+                                  Navigator.of(dialogContext).pop();
+                                }
+                              },
+                              child: const Text('启用'),
+                            ),
+                    );
+                  },
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _edit(
     BuildContext context,
     WidgetRef ref,
@@ -70,7 +123,17 @@ class RulesScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final rulesAsync = ref.watch(ruleSetsProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('周期目标')),
+      appBar: AppBar(
+        title: const Text('周期目标'),
+        actions: [
+          IconButton(
+            tooltip: '使用预设',
+            icon: const Icon(Icons.playlist_add),
+            onPressed: () =>
+                _showPresets(context, ref, rulesAsync.value ?? const []),
+          ),
+        ],
+      ),
       body: rulesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (_, _) => const Center(child: Text('目标加载失败')),
@@ -150,8 +213,13 @@ class _ConditionDraft {
     category: rule.filters.category,
     setRole: rule.filters.setRole,
     operator: rule.operator,
-    target: '${rule.target}',
+    target: rule.metricId == 'session_duration'
+        ? _formatNumber(rule.target / 60)
+        : _formatNumber(rule.target),
   );
+
+  static String _formatNumber(num value) =>
+      value == value.roundToDouble() ? '${value.round()}' : value.toString();
 
   String metricId;
   int? exerciseId;
@@ -244,7 +312,9 @@ class _RuleSetFormDialogState extends ConsumerState<RuleSetFormDialog> {
             setRole: condition.setRole,
           ),
           operator: condition.operator,
-          target: num.parse(condition.targetController.text.trim()),
+          target: condition.metricId == 'session_duration'
+              ? num.parse(condition.targetController.text.trim()) * 60
+              : num.parse(condition.targetController.text.trim()),
         ),
     ];
     final expression = _combineMode == RuleCombineMode.all
@@ -458,7 +528,11 @@ class _ConditionEditor extends StatelessWidget {
                 for (final metric in metrics)
                   DropdownMenuItem(
                     value: metric.metricId,
-                    child: Text('${metric.name}（${metric.unit}）'),
+                    child: Text(
+                      metric.metricId == 'session_duration'
+                          ? '${metric.name}（分钟）'
+                          : '${metric.name}（${metric.unit}）',
+                    ),
                   ),
               ],
               onChanged: (value) {
@@ -556,7 +630,11 @@ class _ConditionEditor extends StatelessWidget {
                 Expanded(
                   child: TextFormField(
                     controller: draft.targetController,
-                    decoration: const InputDecoration(labelText: '目标值'),
+                    decoration: InputDecoration(
+                      labelText: draft.metricId == 'session_duration'
+                          ? '目标值（分钟）'
+                          : '目标值',
+                    ),
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),

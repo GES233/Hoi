@@ -601,271 +601,6 @@ class FavoriteFoodsCompanion extends UpdateCompanion<FavoriteFood> {
   }
 }
 
-class $WeeklyExerciseGoalsTable extends WeeklyExerciseGoals
-    with TableInfo<$WeeklyExerciseGoalsTable, WeeklyExerciseGoal> {
-  @override
-  final GeneratedDatabase attachedDatabase;
-  final String? _alias;
-  $WeeklyExerciseGoalsTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _idMeta = const VerificationMeta('id');
-  @override
-  late final GeneratedColumn<int> id = GeneratedColumn<int>(
-    'id',
-    aliasedName,
-    false,
-    hasAutoIncrement: true,
-    type: DriftSqlType.int,
-    requiredDuringInsert: false,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'PRIMARY KEY AUTOINCREMENT',
-    ),
-  );
-  static const VerificationMeta _targetSessionsMeta = const VerificationMeta(
-    'targetSessions',
-  );
-  @override
-  late final GeneratedColumn<int> targetSessions = GeneratedColumn<int>(
-    'target_sessions',
-    aliasedName,
-    false,
-    type: DriftSqlType.int,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _targetMinutesMeta = const VerificationMeta(
-    'targetMinutes',
-  );
-  @override
-  late final GeneratedColumn<int> targetMinutes = GeneratedColumn<int>(
-    'target_minutes',
-    aliasedName,
-    false,
-    type: DriftSqlType.int,
-    requiredDuringInsert: true,
-  );
-  @override
-  List<GeneratedColumn> get $columns => [id, targetSessions, targetMinutes];
-  @override
-  String get aliasedName => _alias ?? actualTableName;
-  @override
-  String get actualTableName => $name;
-  static const String $name = 'weekly_exercise_goals';
-  @override
-  VerificationContext validateIntegrity(
-    Insertable<WeeklyExerciseGoal> instance, {
-    bool isInserting = false,
-  }) {
-    final context = VerificationContext();
-    final data = instance.toColumns(true);
-    if (data.containsKey('id')) {
-      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
-    }
-    if (data.containsKey('target_sessions')) {
-      context.handle(
-        _targetSessionsMeta,
-        targetSessions.isAcceptableOrUnknown(
-          data['target_sessions']!,
-          _targetSessionsMeta,
-        ),
-      );
-    } else if (isInserting) {
-      context.missing(_targetSessionsMeta);
-    }
-    if (data.containsKey('target_minutes')) {
-      context.handle(
-        _targetMinutesMeta,
-        targetMinutes.isAcceptableOrUnknown(
-          data['target_minutes']!,
-          _targetMinutesMeta,
-        ),
-      );
-    } else if (isInserting) {
-      context.missing(_targetMinutesMeta);
-    }
-    return context;
-  }
-
-  @override
-  Set<GeneratedColumn> get $primaryKey => {id};
-  @override
-  WeeklyExerciseGoal map(Map<String, dynamic> data, {String? tablePrefix}) {
-    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return WeeklyExerciseGoal(
-      id: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}id'],
-      )!,
-      targetSessions: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}target_sessions'],
-      )!,
-      targetMinutes: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}target_minutes'],
-      )!,
-    );
-  }
-
-  @override
-  $WeeklyExerciseGoalsTable createAlias(String alias) {
-    return $WeeklyExerciseGoalsTable(attachedDatabase, alias);
-  }
-}
-
-class WeeklyExerciseGoal extends DataClass
-    implements Insertable<WeeklyExerciseGoal> {
-  final int id;
-  final int targetSessions;
-  final int targetMinutes;
-  const WeeklyExerciseGoal({
-    required this.id,
-    required this.targetSessions,
-    required this.targetMinutes,
-  });
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    map['id'] = Variable<int>(id);
-    map['target_sessions'] = Variable<int>(targetSessions);
-    map['target_minutes'] = Variable<int>(targetMinutes);
-    return map;
-  }
-
-  WeeklyExerciseGoalsCompanion toCompanion(bool nullToAbsent) {
-    return WeeklyExerciseGoalsCompanion(
-      id: Value(id),
-      targetSessions: Value(targetSessions),
-      targetMinutes: Value(targetMinutes),
-    );
-  }
-
-  factory WeeklyExerciseGoal.fromJson(
-    Map<String, dynamic> json, {
-    ValueSerializer? serializer,
-  }) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return WeeklyExerciseGoal(
-      id: serializer.fromJson<int>(json['id']),
-      targetSessions: serializer.fromJson<int>(json['targetSessions']),
-      targetMinutes: serializer.fromJson<int>(json['targetMinutes']),
-    );
-  }
-  @override
-  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return <String, dynamic>{
-      'id': serializer.toJson<int>(id),
-      'targetSessions': serializer.toJson<int>(targetSessions),
-      'targetMinutes': serializer.toJson<int>(targetMinutes),
-    };
-  }
-
-  WeeklyExerciseGoal copyWith({
-    int? id,
-    int? targetSessions,
-    int? targetMinutes,
-  }) => WeeklyExerciseGoal(
-    id: id ?? this.id,
-    targetSessions: targetSessions ?? this.targetSessions,
-    targetMinutes: targetMinutes ?? this.targetMinutes,
-  );
-  WeeklyExerciseGoal copyWithCompanion(WeeklyExerciseGoalsCompanion data) {
-    return WeeklyExerciseGoal(
-      id: data.id.present ? data.id.value : this.id,
-      targetSessions: data.targetSessions.present
-          ? data.targetSessions.value
-          : this.targetSessions,
-      targetMinutes: data.targetMinutes.present
-          ? data.targetMinutes.value
-          : this.targetMinutes,
-    );
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('WeeklyExerciseGoal(')
-          ..write('id: $id, ')
-          ..write('targetSessions: $targetSessions, ')
-          ..write('targetMinutes: $targetMinutes')
-          ..write(')'))
-        .toString();
-  }
-
-  @override
-  int get hashCode => Object.hash(id, targetSessions, targetMinutes);
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is WeeklyExerciseGoal &&
-          other.id == this.id &&
-          other.targetSessions == this.targetSessions &&
-          other.targetMinutes == this.targetMinutes);
-}
-
-class WeeklyExerciseGoalsCompanion extends UpdateCompanion<WeeklyExerciseGoal> {
-  final Value<int> id;
-  final Value<int> targetSessions;
-  final Value<int> targetMinutes;
-  const WeeklyExerciseGoalsCompanion({
-    this.id = const Value.absent(),
-    this.targetSessions = const Value.absent(),
-    this.targetMinutes = const Value.absent(),
-  });
-  WeeklyExerciseGoalsCompanion.insert({
-    this.id = const Value.absent(),
-    required int targetSessions,
-    required int targetMinutes,
-  }) : targetSessions = Value(targetSessions),
-       targetMinutes = Value(targetMinutes);
-  static Insertable<WeeklyExerciseGoal> custom({
-    Expression<int>? id,
-    Expression<int>? targetSessions,
-    Expression<int>? targetMinutes,
-  }) {
-    return RawValuesInsertable({
-      if (id != null) 'id': id,
-      if (targetSessions != null) 'target_sessions': targetSessions,
-      if (targetMinutes != null) 'target_minutes': targetMinutes,
-    });
-  }
-
-  WeeklyExerciseGoalsCompanion copyWith({
-    Value<int>? id,
-    Value<int>? targetSessions,
-    Value<int>? targetMinutes,
-  }) {
-    return WeeklyExerciseGoalsCompanion(
-      id: id ?? this.id,
-      targetSessions: targetSessions ?? this.targetSessions,
-      targetMinutes: targetMinutes ?? this.targetMinutes,
-    );
-  }
-
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    if (id.present) {
-      map['id'] = Variable<int>(id.value);
-    }
-    if (targetSessions.present) {
-      map['target_sessions'] = Variable<int>(targetSessions.value);
-    }
-    if (targetMinutes.present) {
-      map['target_minutes'] = Variable<int>(targetMinutes.value);
-    }
-    return map;
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('WeeklyExerciseGoalsCompanion(')
-          ..write('id: $id, ')
-          ..write('targetSessions: $targetSessions, ')
-          ..write('targetMinutes: $targetMinutes')
-          ..write(')'))
-        .toString();
-  }
-}
-
 class $ExercisesTable extends Exercises
     with TableInfo<$ExercisesTable, Exercise> {
   @override
@@ -884,6 +619,17 @@ class $ExercisesTable extends Exercises
     defaultConstraints: GeneratedColumn.constraintIsAlways(
       'PRIMARY KEY AUTOINCREMENT',
     ),
+  );
+  static const VerificationMeta _builtinKeyMeta = const VerificationMeta(
+    'builtinKey',
+  );
+  @override
+  late final GeneratedColumn<String> builtinKey = GeneratedColumn<String>(
+    'builtin_key',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
   );
   static const VerificationMeta _nameMeta = const VerificationMeta('name');
   @override
@@ -955,6 +701,7 @@ class $ExercisesTable extends Exercises
   @override
   List<GeneratedColumn> get $columns => [
     id,
+    builtinKey,
     name,
     category,
     trackingType,
@@ -977,6 +724,12 @@ class $ExercisesTable extends Exercises
     final data = instance.toColumns(true);
     if (data.containsKey('id')) {
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('builtin_key')) {
+      context.handle(
+        _builtinKeyMeta,
+        builtinKey.isAcceptableOrUnknown(data['builtin_key']!, _builtinKeyMeta),
+      );
     }
     if (data.containsKey('name')) {
       context.handle(
@@ -1013,6 +766,10 @@ class $ExercisesTable extends Exercises
         DriftSqlType.int,
         data['${effectivePrefix}id'],
       )!,
+      builtinKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}builtin_key'],
+      ),
       name: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}name'],
@@ -1077,6 +834,7 @@ class $ExercisesTable extends Exercises
 
 class Exercise extends DataClass implements Insertable<Exercise> {
   final int id;
+  final String? builtinKey;
   final String name;
   final ExerciseCategory category;
   final TrackingType trackingType;
@@ -1086,6 +844,7 @@ class Exercise extends DataClass implements Insertable<Exercise> {
   final DateTime createdAt;
   const Exercise({
     required this.id,
+    this.builtinKey,
     required this.name,
     required this.category,
     required this.trackingType,
@@ -1098,6 +857,9 @@ class Exercise extends DataClass implements Insertable<Exercise> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
+    if (!nullToAbsent || builtinKey != null) {
+      map['builtin_key'] = Variable<String>(builtinKey);
+    }
     map['name'] = Variable<String>(name);
     {
       map['category'] = Variable<String>(
@@ -1129,6 +891,9 @@ class Exercise extends DataClass implements Insertable<Exercise> {
   ExercisesCompanion toCompanion(bool nullToAbsent) {
     return ExercisesCompanion(
       id: Value(id),
+      builtinKey: builtinKey == null && nullToAbsent
+          ? const Value.absent()
+          : Value(builtinKey),
       name: Value(name),
       category: Value(category),
       trackingType: Value(trackingType),
@@ -1148,6 +913,7 @@ class Exercise extends DataClass implements Insertable<Exercise> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return Exercise(
       id: serializer.fromJson<int>(json['id']),
+      builtinKey: serializer.fromJson<String?>(json['builtinKey']),
       name: serializer.fromJson<String>(json['name']),
       category: $ExercisesTable.$convertercategory.fromJson(
         serializer.fromJson<String>(json['category']),
@@ -1170,6 +936,7 @@ class Exercise extends DataClass implements Insertable<Exercise> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
+      'builtinKey': serializer.toJson<String?>(builtinKey),
       'name': serializer.toJson<String>(name),
       'category': serializer.toJson<String>(
         $ExercisesTable.$convertercategory.toJson(category),
@@ -1190,6 +957,7 @@ class Exercise extends DataClass implements Insertable<Exercise> {
 
   Exercise copyWith({
     int? id,
+    Value<String?> builtinKey = const Value.absent(),
     String? name,
     ExerciseCategory? category,
     TrackingType? trackingType,
@@ -1199,6 +967,7 @@ class Exercise extends DataClass implements Insertable<Exercise> {
     DateTime? createdAt,
   }) => Exercise(
     id: id ?? this.id,
+    builtinKey: builtinKey.present ? builtinKey.value : this.builtinKey,
     name: name ?? this.name,
     category: category ?? this.category,
     trackingType: trackingType ?? this.trackingType,
@@ -1210,6 +979,9 @@ class Exercise extends DataClass implements Insertable<Exercise> {
   Exercise copyWithCompanion(ExercisesCompanion data) {
     return Exercise(
       id: data.id.present ? data.id.value : this.id,
+      builtinKey: data.builtinKey.present
+          ? data.builtinKey.value
+          : this.builtinKey,
       name: data.name.present ? data.name.value : this.name,
       category: data.category.present ? data.category.value : this.category,
       trackingType: data.trackingType.present
@@ -1232,6 +1004,7 @@ class Exercise extends DataClass implements Insertable<Exercise> {
   String toString() {
     return (StringBuffer('Exercise(')
           ..write('id: $id, ')
+          ..write('builtinKey: $builtinKey, ')
           ..write('name: $name, ')
           ..write('category: $category, ')
           ..write('trackingType: $trackingType, ')
@@ -1246,6 +1019,7 @@ class Exercise extends DataClass implements Insertable<Exercise> {
   @override
   int get hashCode => Object.hash(
     id,
+    builtinKey,
     name,
     category,
     trackingType,
@@ -1259,6 +1033,7 @@ class Exercise extends DataClass implements Insertable<Exercise> {
       identical(this, other) ||
       (other is Exercise &&
           other.id == this.id &&
+          other.builtinKey == this.builtinKey &&
           other.name == this.name &&
           other.category == this.category &&
           other.trackingType == this.trackingType &&
@@ -1270,6 +1045,7 @@ class Exercise extends DataClass implements Insertable<Exercise> {
 
 class ExercisesCompanion extends UpdateCompanion<Exercise> {
   final Value<int> id;
+  final Value<String?> builtinKey;
   final Value<String> name;
   final Value<ExerciseCategory> category;
   final Value<TrackingType> trackingType;
@@ -1279,6 +1055,7 @@ class ExercisesCompanion extends UpdateCompanion<Exercise> {
   final Value<DateTime> createdAt;
   const ExercisesCompanion({
     this.id = const Value.absent(),
+    this.builtinKey = const Value.absent(),
     this.name = const Value.absent(),
     this.category = const Value.absent(),
     this.trackingType = const Value.absent(),
@@ -1289,6 +1066,7 @@ class ExercisesCompanion extends UpdateCompanion<Exercise> {
   });
   ExercisesCompanion.insert({
     this.id = const Value.absent(),
+    this.builtinKey = const Value.absent(),
     required String name,
     required ExerciseCategory category,
     required TrackingType trackingType,
@@ -1304,6 +1082,7 @@ class ExercisesCompanion extends UpdateCompanion<Exercise> {
        createdAt = Value(createdAt);
   static Insertable<Exercise> custom({
     Expression<int>? id,
+    Expression<String>? builtinKey,
     Expression<String>? name,
     Expression<String>? category,
     Expression<String>? trackingType,
@@ -1314,6 +1093,7 @@ class ExercisesCompanion extends UpdateCompanion<Exercise> {
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
+      if (builtinKey != null) 'builtin_key': builtinKey,
       if (name != null) 'name': name,
       if (category != null) 'category': category,
       if (trackingType != null) 'tracking_type': trackingType,
@@ -1326,6 +1106,7 @@ class ExercisesCompanion extends UpdateCompanion<Exercise> {
 
   ExercisesCompanion copyWith({
     Value<int>? id,
+    Value<String?>? builtinKey,
     Value<String>? name,
     Value<ExerciseCategory>? category,
     Value<TrackingType>? trackingType,
@@ -1336,6 +1117,7 @@ class ExercisesCompanion extends UpdateCompanion<Exercise> {
   }) {
     return ExercisesCompanion(
       id: id ?? this.id,
+      builtinKey: builtinKey ?? this.builtinKey,
       name: name ?? this.name,
       category: category ?? this.category,
       trackingType: trackingType ?? this.trackingType,
@@ -1351,6 +1133,9 @@ class ExercisesCompanion extends UpdateCompanion<Exercise> {
     final map = <String, Expression>{};
     if (id.present) {
       map['id'] = Variable<int>(id.value);
+    }
+    if (builtinKey.present) {
+      map['builtin_key'] = Variable<String>(builtinKey.value);
     }
     if (name.present) {
       map['name'] = Variable<String>(name.value);
@@ -1388,6 +1173,7 @@ class ExercisesCompanion extends UpdateCompanion<Exercise> {
   String toString() {
     return (StringBuffer('ExercisesCompanion(')
           ..write('id: $id, ')
+          ..write('builtinKey: $builtinKey, ')
           ..write('name: $name, ')
           ..write('category: $category, ')
           ..write('trackingType: $trackingType, ')
@@ -6298,6 +6084,17 @@ class $RuleSetsTable extends RuleSets with TableInfo<$RuleSetsTable, RuleSet> {
       'PRIMARY KEY AUTOINCREMENT',
     ),
   );
+  static const VerificationMeta _presetKeyMeta = const VerificationMeta(
+    'presetKey',
+  );
+  @override
+  late final GeneratedColumn<String> presetKey = GeneratedColumn<String>(
+    'preset_key',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _nameMeta = const VerificationMeta('name');
   @override
   late final GeneratedColumn<String> name = GeneratedColumn<String>(
@@ -6395,6 +6192,7 @@ class $RuleSetsTable extends RuleSets with TableInfo<$RuleSetsTable, RuleSet> {
   @override
   List<GeneratedColumn> get $columns => [
     id,
+    presetKey,
     name,
     period,
     effectiveFromDate,
@@ -6419,6 +6217,12 @@ class $RuleSetsTable extends RuleSets with TableInfo<$RuleSetsTable, RuleSet> {
     final data = instance.toColumns(true);
     if (data.containsKey('id')) {
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('preset_key')) {
+      context.handle(
+        _presetKeyMeta,
+        presetKey.isAcceptableOrUnknown(data['preset_key']!, _presetKeyMeta),
+      );
     }
     if (data.containsKey('name')) {
       context.handle(
@@ -6497,6 +6301,10 @@ class $RuleSetsTable extends RuleSets with TableInfo<$RuleSetsTable, RuleSet> {
         DriftSqlType.int,
         data['${effectivePrefix}id'],
       )!,
+      presetKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}preset_key'],
+      ),
       name: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}name'],
@@ -6555,6 +6363,7 @@ class $RuleSetsTable extends RuleSets with TableInfo<$RuleSetsTable, RuleSet> {
 
 class RuleSet extends DataClass implements Insertable<RuleSet> {
   final int id;
+  final String? presetKey;
   final String name;
   final RulePeriod period;
   final DateTime effectiveFromDate;
@@ -6566,6 +6375,7 @@ class RuleSet extends DataClass implements Insertable<RuleSet> {
   final DateTime createdAt;
   const RuleSet({
     required this.id,
+    this.presetKey,
     required this.name,
     required this.period,
     required this.effectiveFromDate,
@@ -6580,6 +6390,9 @@ class RuleSet extends DataClass implements Insertable<RuleSet> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
+    if (!nullToAbsent || presetKey != null) {
+      map['preset_key'] = Variable<String>(presetKey);
+    }
     map['name'] = Variable<String>(name);
     {
       map['period'] = Variable<String>(
@@ -6607,6 +6420,9 @@ class RuleSet extends DataClass implements Insertable<RuleSet> {
   RuleSetsCompanion toCompanion(bool nullToAbsent) {
     return RuleSetsCompanion(
       id: Value(id),
+      presetKey: presetKey == null && nullToAbsent
+          ? const Value.absent()
+          : Value(presetKey),
       name: Value(name),
       period: Value(period),
       effectiveFromDate: Value(effectiveFromDate),
@@ -6630,6 +6446,7 @@ class RuleSet extends DataClass implements Insertable<RuleSet> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return RuleSet(
       id: serializer.fromJson<int>(json['id']),
+      presetKey: serializer.fromJson<String?>(json['presetKey']),
       name: serializer.fromJson<String>(json['name']),
       period: $RuleSetsTable.$converterperiod.fromJson(
         serializer.fromJson<String>(json['period']),
@@ -6656,6 +6473,7 @@ class RuleSet extends DataClass implements Insertable<RuleSet> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
+      'presetKey': serializer.toJson<String?>(presetKey),
       'name': serializer.toJson<String>(name),
       'period': serializer.toJson<String>(
         $RuleSetsTable.$converterperiod.toJson(period),
@@ -6676,6 +6494,7 @@ class RuleSet extends DataClass implements Insertable<RuleSet> {
 
   RuleSet copyWith({
     int? id,
+    Value<String?> presetKey = const Value.absent(),
     String? name,
     RulePeriod? period,
     DateTime? effectiveFromDate,
@@ -6687,6 +6506,7 @@ class RuleSet extends DataClass implements Insertable<RuleSet> {
     DateTime? createdAt,
   }) => RuleSet(
     id: id ?? this.id,
+    presetKey: presetKey.present ? presetKey.value : this.presetKey,
     name: name ?? this.name,
     period: period ?? this.period,
     effectiveFromDate: effectiveFromDate ?? this.effectiveFromDate,
@@ -6703,6 +6523,7 @@ class RuleSet extends DataClass implements Insertable<RuleSet> {
   RuleSet copyWithCompanion(RuleSetsCompanion data) {
     return RuleSet(
       id: data.id.present ? data.id.value : this.id,
+      presetKey: data.presetKey.present ? data.presetKey.value : this.presetKey,
       name: data.name.present ? data.name.value : this.name,
       period: data.period.present ? data.period.value : this.period,
       effectiveFromDate: data.effectiveFromDate.present
@@ -6731,6 +6552,7 @@ class RuleSet extends DataClass implements Insertable<RuleSet> {
   String toString() {
     return (StringBuffer('RuleSet(')
           ..write('id: $id, ')
+          ..write('presetKey: $presetKey, ')
           ..write('name: $name, ')
           ..write('period: $period, ')
           ..write('effectiveFromDate: $effectiveFromDate, ')
@@ -6747,6 +6569,7 @@ class RuleSet extends DataClass implements Insertable<RuleSet> {
   @override
   int get hashCode => Object.hash(
     id,
+    presetKey,
     name,
     period,
     effectiveFromDate,
@@ -6762,6 +6585,7 @@ class RuleSet extends DataClass implements Insertable<RuleSet> {
       identical(this, other) ||
       (other is RuleSet &&
           other.id == this.id &&
+          other.presetKey == this.presetKey &&
           other.name == this.name &&
           other.period == this.period &&
           other.effectiveFromDate == this.effectiveFromDate &&
@@ -6775,6 +6599,7 @@ class RuleSet extends DataClass implements Insertable<RuleSet> {
 
 class RuleSetsCompanion extends UpdateCompanion<RuleSet> {
   final Value<int> id;
+  final Value<String?> presetKey;
   final Value<String> name;
   final Value<RulePeriod> period;
   final Value<DateTime> effectiveFromDate;
@@ -6786,6 +6611,7 @@ class RuleSetsCompanion extends UpdateCompanion<RuleSet> {
   final Value<DateTime> createdAt;
   const RuleSetsCompanion({
     this.id = const Value.absent(),
+    this.presetKey = const Value.absent(),
     this.name = const Value.absent(),
     this.period = const Value.absent(),
     this.effectiveFromDate = const Value.absent(),
@@ -6798,6 +6624,7 @@ class RuleSetsCompanion extends UpdateCompanion<RuleSet> {
   });
   RuleSetsCompanion.insert({
     this.id = const Value.absent(),
+    this.presetKey = const Value.absent(),
     required String name,
     required RulePeriod period,
     required DateTime effectiveFromDate,
@@ -6816,6 +6643,7 @@ class RuleSetsCompanion extends UpdateCompanion<RuleSet> {
        createdAt = Value(createdAt);
   static Insertable<RuleSet> custom({
     Expression<int>? id,
+    Expression<String>? presetKey,
     Expression<String>? name,
     Expression<String>? period,
     Expression<DateTime>? effectiveFromDate,
@@ -6828,6 +6656,7 @@ class RuleSetsCompanion extends UpdateCompanion<RuleSet> {
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
+      if (presetKey != null) 'preset_key': presetKey,
       if (name != null) 'name': name,
       if (period != null) 'period': period,
       if (effectiveFromDate != null) 'effective_from_date': effectiveFromDate,
@@ -6844,6 +6673,7 @@ class RuleSetsCompanion extends UpdateCompanion<RuleSet> {
 
   RuleSetsCompanion copyWith({
     Value<int>? id,
+    Value<String?>? presetKey,
     Value<String>? name,
     Value<RulePeriod>? period,
     Value<DateTime>? effectiveFromDate,
@@ -6856,6 +6686,7 @@ class RuleSetsCompanion extends UpdateCompanion<RuleSet> {
   }) {
     return RuleSetsCompanion(
       id: id ?? this.id,
+      presetKey: presetKey ?? this.presetKey,
       name: name ?? this.name,
       period: period ?? this.period,
       effectiveFromDate: effectiveFromDate ?? this.effectiveFromDate,
@@ -6874,6 +6705,9 @@ class RuleSetsCompanion extends UpdateCompanion<RuleSet> {
     final map = <String, Expression>{};
     if (id.present) {
       map['id'] = Variable<int>(id.value);
+    }
+    if (presetKey.present) {
+      map['preset_key'] = Variable<String>(presetKey.value);
     }
     if (name.present) {
       map['name'] = Variable<String>(name.value);
@@ -6917,6 +6751,7 @@ class RuleSetsCompanion extends UpdateCompanion<RuleSet> {
   String toString() {
     return (StringBuffer('RuleSetsCompanion(')
           ..write('id: $id, ')
+          ..write('presetKey: $presetKey, ')
           ..write('name: $name, ')
           ..write('period: $period, ')
           ..write('effectiveFromDate: $effectiveFromDate, ')
@@ -6936,8 +6771,6 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
   late final $FoodEntriesTable foodEntries = $FoodEntriesTable(this);
   late final $FavoriteFoodsTable favoriteFoods = $FavoriteFoodsTable(this);
-  late final $WeeklyExerciseGoalsTable weeklyExerciseGoals =
-      $WeeklyExerciseGoalsTable(this);
   late final $ExercisesTable exercises = $ExercisesTable(this);
   late final $WorkoutTemplatesTable workoutTemplates = $WorkoutTemplatesTable(
     this,
@@ -6962,7 +6795,6 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   List<DatabaseSchemaEntity> get allSchemaEntities => [
     foodEntries,
     favoriteFoods,
-    weeklyExerciseGoals,
     exercises,
     workoutTemplates,
     templateVersions,
@@ -7354,195 +7186,9 @@ typedef $$FavoriteFoodsTableProcessedTableManager =
       FavoriteFood,
       PrefetchHooks Function()
     >;
-typedef $$WeeklyExerciseGoalsTableCreateCompanionBuilder =
-    WeeklyExerciseGoalsCompanion Function({
-      Value<int> id,
-      required int targetSessions,
-      required int targetMinutes,
-    });
-typedef $$WeeklyExerciseGoalsTableUpdateCompanionBuilder =
-    WeeklyExerciseGoalsCompanion Function({
-      Value<int> id,
-      Value<int> targetSessions,
-      Value<int> targetMinutes,
-    });
-
-class $$WeeklyExerciseGoalsTableFilterComposer
-    extends Composer<_$AppDatabase, $WeeklyExerciseGoalsTable> {
-  $$WeeklyExerciseGoalsTableFilterComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnFilters<int> get id => $composableBuilder(
-    column: $table.id,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<int> get targetSessions => $composableBuilder(
-    column: $table.targetSessions,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<int> get targetMinutes => $composableBuilder(
-    column: $table.targetMinutes,
-    builder: (column) => ColumnFilters(column),
-  );
-}
-
-class $$WeeklyExerciseGoalsTableOrderingComposer
-    extends Composer<_$AppDatabase, $WeeklyExerciseGoalsTable> {
-  $$WeeklyExerciseGoalsTableOrderingComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnOrderings<int> get id => $composableBuilder(
-    column: $table.id,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<int> get targetSessions => $composableBuilder(
-    column: $table.targetSessions,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<int> get targetMinutes => $composableBuilder(
-    column: $table.targetMinutes,
-    builder: (column) => ColumnOrderings(column),
-  );
-}
-
-class $$WeeklyExerciseGoalsTableAnnotationComposer
-    extends Composer<_$AppDatabase, $WeeklyExerciseGoalsTable> {
-  $$WeeklyExerciseGoalsTableAnnotationComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  GeneratedColumn<int> get id =>
-      $composableBuilder(column: $table.id, builder: (column) => column);
-
-  GeneratedColumn<int> get targetSessions => $composableBuilder(
-    column: $table.targetSessions,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<int> get targetMinutes => $composableBuilder(
-    column: $table.targetMinutes,
-    builder: (column) => column,
-  );
-}
-
-class $$WeeklyExerciseGoalsTableTableManager
-    extends
-        RootTableManager<
-          _$AppDatabase,
-          $WeeklyExerciseGoalsTable,
-          WeeklyExerciseGoal,
-          $$WeeklyExerciseGoalsTableFilterComposer,
-          $$WeeklyExerciseGoalsTableOrderingComposer,
-          $$WeeklyExerciseGoalsTableAnnotationComposer,
-          $$WeeklyExerciseGoalsTableCreateCompanionBuilder,
-          $$WeeklyExerciseGoalsTableUpdateCompanionBuilder,
-          (
-            WeeklyExerciseGoal,
-            BaseReferences<
-              _$AppDatabase,
-              $WeeklyExerciseGoalsTable,
-              WeeklyExerciseGoal
-            >,
-          ),
-          WeeklyExerciseGoal,
-          PrefetchHooks Function()
-        > {
-  $$WeeklyExerciseGoalsTableTableManager(
-    _$AppDatabase db,
-    $WeeklyExerciseGoalsTable table,
-  ) : super(
-        TableManagerState(
-          db: db,
-          table: table,
-          createFilteringComposer: () =>
-              $$WeeklyExerciseGoalsTableFilterComposer($db: db, $table: table),
-          createOrderingComposer: () =>
-              $$WeeklyExerciseGoalsTableOrderingComposer(
-                $db: db,
-                $table: table,
-              ),
-          createComputedFieldComposer: () =>
-              $$WeeklyExerciseGoalsTableAnnotationComposer(
-                $db: db,
-                $table: table,
-              ),
-          updateCompanionCallback:
-              ({
-                Value<int> id = const Value.absent(),
-                Value<int> targetSessions = const Value.absent(),
-                Value<int> targetMinutes = const Value.absent(),
-              }) => WeeklyExerciseGoalsCompanion(
-                id: id,
-                targetSessions: targetSessions,
-                targetMinutes: targetMinutes,
-              ),
-          createCompanionCallback:
-              ({
-                Value<int> id = const Value.absent(),
-                required int targetSessions,
-                required int targetMinutes,
-              }) => WeeklyExerciseGoalsCompanion.insert(
-                id: id,
-                targetSessions: targetSessions,
-                targetMinutes: targetMinutes,
-              ),
-          withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable<$WeeklyExerciseGoalsTable, WeeklyExerciseGoal>(
-                    table,
-                  ),
-                  BaseReferences<
-                    _$AppDatabase,
-                    $WeeklyExerciseGoalsTable,
-                    WeeklyExerciseGoal
-                  >(db, table, e),
-                ),
-              )
-              .toList(),
-          prefetchHooksCallback: null,
-        ),
-      );
-}
-
-typedef $$WeeklyExerciseGoalsTableProcessedTableManager =
-    ProcessedTableManager<
-      _$AppDatabase,
-      $WeeklyExerciseGoalsTable,
-      WeeklyExerciseGoal,
-      $$WeeklyExerciseGoalsTableFilterComposer,
-      $$WeeklyExerciseGoalsTableOrderingComposer,
-      $$WeeklyExerciseGoalsTableAnnotationComposer,
-      $$WeeklyExerciseGoalsTableCreateCompanionBuilder,
-      $$WeeklyExerciseGoalsTableUpdateCompanionBuilder,
-      (
-        WeeklyExerciseGoal,
-        BaseReferences<
-          _$AppDatabase,
-          $WeeklyExerciseGoalsTable,
-          WeeklyExerciseGoal
-        >,
-      ),
-      WeeklyExerciseGoal,
-      PrefetchHooks Function()
-    >;
 typedef $$ExercisesTableCreateCompanionBuilder = ExercisesCompanion Function({
   Value<int> id,
+  Value<String?> builtinKey,
   required String name,
   required ExerciseCategory category,
   required TrackingType trackingType,
@@ -7553,6 +7199,7 @@ typedef $$ExercisesTableCreateCompanionBuilder = ExercisesCompanion Function({
 });
 typedef $$ExercisesTableUpdateCompanionBuilder = ExercisesCompanion Function({
   Value<int> id,
+  Value<String?> builtinKey,
   Value<String> name,
   Value<ExerciseCategory> category,
   Value<TrackingType> trackingType,
@@ -7619,6 +7266,11 @@ class $$ExercisesTableFilterComposer
   });
   ColumnFilters<int> get id => $composableBuilder(
     column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get builtinKey => $composableBuilder(
+    column: $table.builtinKey,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -7726,6 +7378,11 @@ class $$ExercisesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get builtinKey => $composableBuilder(
+    column: $table.builtinKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get name => $composableBuilder(
     column: $table.name,
     builder: (column) => ColumnOrderings(column),
@@ -7773,6 +7430,11 @@ class $$ExercisesTableAnnotationComposer
   });
   GeneratedColumn<int> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get builtinKey => $composableBuilder(
+    column: $table.builtinKey,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<String> get name =>
       $composableBuilder(column: $table.name, builder: (column) => column);
@@ -7890,6 +7552,7 @@ class $$ExercisesTableTableManager
           updateCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
+                Value<String?> builtinKey = const Value.absent(),
                 Value<String> name = const Value.absent(),
                 Value<ExerciseCategory> category = const Value.absent(),
                 Value<TrackingType> trackingType = const Value.absent(),
@@ -7899,6 +7562,7 @@ class $$ExercisesTableTableManager
                 Value<DateTime> createdAt = const Value.absent(),
               }) => ExercisesCompanion(
                 id: id,
+                builtinKey: builtinKey,
                 name: name,
                 category: category,
                 trackingType: trackingType,
@@ -7910,6 +7574,7 @@ class $$ExercisesTableTableManager
           createCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
+                Value<String?> builtinKey = const Value.absent(),
                 required String name,
                 required ExerciseCategory category,
                 required TrackingType trackingType,
@@ -7919,6 +7584,7 @@ class $$ExercisesTableTableManager
                 required DateTime createdAt,
               }) => ExercisesCompanion.insert(
                 id: id,
+                builtinKey: builtinKey,
                 name: name,
                 category: category,
                 trackingType: trackingType,
@@ -12167,6 +11833,7 @@ typedef $$RestMarksTableProcessedTableManager =
     >;
 typedef $$RuleSetsTableCreateCompanionBuilder = RuleSetsCompanion Function({
   Value<int> id,
+  Value<String?> presetKey,
   required String name,
   required RulePeriod period,
   required DateTime effectiveFromDate,
@@ -12179,6 +11846,7 @@ typedef $$RuleSetsTableCreateCompanionBuilder = RuleSetsCompanion Function({
 });
 typedef $$RuleSetsTableUpdateCompanionBuilder = RuleSetsCompanion Function({
   Value<int> id,
+  Value<String?> presetKey,
   Value<String> name,
   Value<RulePeriod> period,
   Value<DateTime> effectiveFromDate,
@@ -12201,6 +11869,11 @@ class $$RuleSetsTableFilterComposer
   });
   ColumnFilters<int> get id => $composableBuilder(
     column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get presetKey => $composableBuilder(
+    column: $table.presetKey,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -12266,6 +11939,11 @@ class $$RuleSetsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get presetKey => $composableBuilder(
+    column: $table.presetKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get name => $composableBuilder(
     column: $table.name,
     builder: (column) => ColumnOrderings(column),
@@ -12323,6 +12001,9 @@ class $$RuleSetsTableAnnotationComposer
   });
   GeneratedColumn<int> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get presetKey =>
+      $composableBuilder(column: $table.presetKey, builder: (column) => column);
 
   GeneratedColumn<String> get name =>
       $composableBuilder(column: $table.name, builder: (column) => column);
@@ -12394,6 +12075,7 @@ class $$RuleSetsTableTableManager
           updateCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
+                Value<String?> presetKey = const Value.absent(),
                 Value<String> name = const Value.absent(),
                 Value<RulePeriod> period = const Value.absent(),
                 Value<DateTime> effectiveFromDate = const Value.absent(),
@@ -12405,6 +12087,7 @@ class $$RuleSetsTableTableManager
                 Value<DateTime> createdAt = const Value.absent(),
               }) => RuleSetsCompanion(
                 id: id,
+                presetKey: presetKey,
                 name: name,
                 period: period,
                 effectiveFromDate: effectiveFromDate,
@@ -12418,6 +12101,7 @@ class $$RuleSetsTableTableManager
           createCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
+                Value<String?> presetKey = const Value.absent(),
                 required String name,
                 required RulePeriod period,
                 required DateTime effectiveFromDate,
@@ -12429,6 +12113,7 @@ class $$RuleSetsTableTableManager
                 required DateTime createdAt,
               }) => RuleSetsCompanion.insert(
                 id: id,
+                presetKey: presetKey,
                 name: name,
                 period: period,
                 effectiveFromDate: effectiveFromDate,
@@ -12478,8 +12163,6 @@ class $AppDatabaseManager {
       $$FoodEntriesTableTableManager(_db, _db.foodEntries);
   $$FavoriteFoodsTableTableManager get favoriteFoods =>
       $$FavoriteFoodsTableTableManager(_db, _db.favoriteFoods);
-  $$WeeklyExerciseGoalsTableTableManager get weeklyExerciseGoals =>
-      $$WeeklyExerciseGoalsTableTableManager(_db, _db.weeklyExerciseGoals);
   $$ExercisesTableTableManager get exercises =>
       $$ExercisesTableTableManager(_db, _db.exercises);
   $$WorkoutTemplatesTableTableManager get workoutTemplates =>

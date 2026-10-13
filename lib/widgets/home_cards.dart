@@ -261,13 +261,7 @@ class RuleGoalsCard extends ConsumerWidget {
         scheme.error,
       ),
     };
-    final details = evaluation.children
-        .map(
-          (child) => child.actual == null
-              ? '数据不足'
-              : '${child.actual}/${child.target} ${child.unit ?? ''}'.trim(),
-        )
-        .join(' · ');
+    final details = evaluation.children.map(_formatRuleValue).join(' · ');
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
@@ -291,6 +285,28 @@ class RuleGoalsCard extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  String _formatRuleValue(RuleEvaluation evaluation) {
+    final actual = evaluation.actual;
+    final target = evaluation.target;
+    if (actual == null || target == null) return '数据不足';
+    if (evaluation.unit == 'second') {
+      final actualMinutes = actual / 60;
+      final targetMinutes = target / 60;
+      String minutes(num value) => value == value.roundToDouble()
+          ? '${value.round()}'
+          : value.toStringAsFixed(1);
+      return '${minutes(actualMinutes)}/${minutes(targetMinutes)} 分钟';
+    }
+    final unit = switch (evaluation.unit) {
+      'session' => '次',
+      'set' => '组',
+      'rep' => '次',
+      'meter' => '米',
+      _ => evaluation.unit ?? '',
+    };
+    return '$actual/$target $unit'.trim();
   }
 }
 
@@ -384,17 +400,15 @@ class FoodSection extends ConsumerWidget {
   }
 }
 
-/// 本周运动卡片：次数/时长目标进度 + 点阵图例（点阵本身在顶部周条）。
-/// 次数按已完成训练计；时长只累计已记录总用时的训练，未知用时不推算
+/// 本周运动概览 + 点阵图例（目标统一由上方 RuleSet 卡片负责）。
+/// 时长只累计已记录总用时的训练，未知用时不推算。
 class WeeklyExerciseCard extends ConsumerWidget {
   const WeeklyExerciseCard({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final date = ref.watch(selectedDateProvider);
-    final goalsAsync = ref.watch(weeklyGoalsProvider);
     final weekAsync = ref.watch(weekWorkoutsProvider);
-    final goals = goalsAsync.value ?? AppDatabase.defaultWeeklyGoals;
 
     final weekStart = AppDatabase.weekStart(date);
     final weekEnd = weekStart.add(const Duration(days: 6));
@@ -414,11 +428,6 @@ class WeeklyExerciseCard extends ConsumerWidget {
             Row(
               children: [
                 Text('本周运动', style: Theme.of(context).textTheme.titleMedium),
-                const Spacer(),
-                TextButton(
-                  onPressed: () => showEditWeeklyGoalsDialog(context),
-                  child: const Text('调整目标'),
-                ),
               ],
             ),
             Text(
@@ -439,18 +448,9 @@ class WeeklyExerciseCard extends ConsumerWidget {
               )
             else ...[
               const SizedBox(height: 12),
-              GoalProgress(
-                label: '运动次数',
-                current: weekWorkouts.length,
-                target: goals.targetSessions,
-                unit: '次',
-              ),
-              const SizedBox(height: 12),
-              GoalProgress(
-                label: '运动时长',
-                current: totalMinutes,
-                target: goals.targetMinutes,
-                unit: '分钟',
+              Text(
+                '${weekWorkouts.length} 次 · 已记录 $totalMinutes 分钟',
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
               const SizedBox(height: 12),
               // 顶部周条点阵的图例
@@ -488,48 +488,4 @@ class WeeklyExerciseCard extends ConsumerWidget {
       Text(label, style: Theme.of(context).textTheme.labelSmall),
     ],
   );
-}
-
-/// 单项目标进度条（自动封顶到 100%）
-class GoalProgress extends StatelessWidget {
-  const GoalProgress({
-    super.key,
-    required this.label,
-    required this.current,
-    required this.target,
-    required this.unit,
-  });
-
-  final String label;
-  final int current;
-  final int target;
-  final String unit;
-
-  @override
-  Widget build(BuildContext context) {
-    final value = target <= 0
-        ? 0.0
-        : (current / target).clamp(0.0, 1.0).toDouble();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(label, style: Theme.of(context).textTheme.labelMedium),
-            Text(
-              '$current / $target $unit',
-              style: Theme.of(context).textTheme.labelMedium,
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        LinearProgressIndicator(
-          value: value,
-          minHeight: 6,
-          borderRadius: BorderRadius.circular(3),
-        ),
-      ],
-    );
-  }
 }

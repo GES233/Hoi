@@ -47,17 +47,33 @@ class _WorkoutScreenState extends ConsumerState<WorkoutScreen> {
   }
 
   Future<void> _addExercise(Workout workout) async {
-    final draft = await showAddWorkoutExerciseDialog(context);
+    final exercises = await ref.read(databaseProvider).getExercises();
+    if (!mounted) return;
+    final draft = await showAddWorkoutExerciseDialog(
+      context,
+      exercises: exercises,
+    );
     if (draft == null) return;
-    await ref
-        .read(databaseProvider)
-        .addWorkoutExercise(
-          workout.id,
+    final db = ref.read(databaseProvider);
+    final catalogId =
+        draft.catalogExerciseId ??
+        await db.insertExercise(
           name: draft.name,
           category: draft.category,
           trackingType: draft.trackingType,
-          note: draft.note,
+          loadConvention: draft.loadConvention,
+          repsConvention: draft.repsConvention,
         );
+    await db.addWorkoutExercise(
+      workout.id,
+      catalogExerciseId: catalogId,
+      name: draft.name,
+      category: draft.category,
+      trackingType: draft.trackingType,
+      loadConvention: draft.loadConvention,
+      repsConvention: draft.repsConvention,
+      note: draft.note,
+    );
   }
 
   /// 开始一组计时；时钟来自 provider，测试可注入假时钟

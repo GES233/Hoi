@@ -42,11 +42,6 @@ final favoriteFoodsProvider = StreamProvider.autoDispose<List<FavoriteFood>>(
   (ref) => ref.watch(databaseProvider).watchFavoriteFoods(),
 );
 
-/// 每周运动目标（次数 + 分钟）
-final weeklyGoalsProvider = StreamProvider.autoDispose<WeeklyExerciseGoal>(
-  (ref) => ref.watch(databaseProvider).watchWeeklyGoals(),
-);
-
 /// 当前进行中的训练（至多一场）
 final ongoingWorkoutProvider = StreamProvider.autoDispose<Workout?>(
   (ref) => ref.watch(databaseProvider).watchOngoingWorkout(),

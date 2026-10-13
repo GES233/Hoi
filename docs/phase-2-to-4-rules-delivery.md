@@ -7,7 +7,7 @@
 ### 阶段 2：指标与评估器
 
 - 新增与 Drift、Riverpod、Widget 解耦的 `MetricContext` 训练事实 DTO。
-- 内置注册 `session_count`、`valid_set_count`、`reps`、`duration`、`distance`。
+- 内置注册 `session_count`、`session_duration`、`valid_set_count`、`reps`、`duration`、`distance`；整场用时未知时不从动作组推算。
 - 每个指标声明稳定 ID、名称、单位、输入范围、聚合方式、定义版本和缺失数据策略。
 - 实现 `ComparisonRule`、`AllRule`、`AnyRule` 及 JSON 编解码。
 - 实现带解释结果的 `RuleEvaluator`，输出通过、部分进度、失败、数据不足、实际值、目标、单位、原因、缺失字段和策略版本。
@@ -16,6 +16,7 @@
 ### 阶段 3：RuleSet 持久化与编辑
 
 - 新增 `rule_sets` 表，保存日/周周期、生效日期、ALL/ANY、AST JSON 和评估策略版本。
+- “每周 3 次且记录 90 分钟”改为默认激活的内置 RuleSet 预设；用户可编辑、归档或再次启用。
 - 支持创建、编辑、归档、有效期过滤、数据库重开恢复和实时评估。
 - 新增结构化编辑页，支持指标、动作、类别、组角色、比较运算、目标值及多条件组合。
 - 表单阻止空名称、空目标值、无效数字、错误日期和根组合不一致的规则保存。
@@ -60,17 +61,17 @@ flutter analyze
 结果：No issues found。
 
 flutter test
-结果：50 项测试全部通过。
+结果：53 项测试全部通过。
 ```
 
-纯 Dart 规则测试覆盖五个内置指标、动作 ID 过滤、单位、跳过/零值组、缺失数据、比较规则、ALL/ANY 合成和 JSON 往返。数据库与 widget 测试覆盖 RuleSet CRUD、有效期、重开恢复、训练事实不被规则编辑修改、结构化表单校验、多动作训练对照和首页两类进度分区。
+纯 Dart 规则测试覆盖六个内置指标、动作 ID 过滤、单位、跳过/零值组、缺失数据、比较规则、ALL/ANY 合成和 JSON 往返。数据库与 widget 测试覆盖 RuleSet CRUD、预设激活、v4→v5 迁移、有效期、重开恢复、训练事实不被规则编辑修改、结构化表单校验、多动作训练对照和首页两类进度分区。
 
 ## 4. 未实现内容与限制
 
 - 方案管理页当前仍是单动作模板快捷编辑器。多动作模板的数据模型、开始训练和训练页展示已完成，但面向用户的完整多动作模板编排器尚未实现。
 - 规则编辑器首版编辑一层 ALL/ANY 条件列表；AST 模型和评估器可以递归处理嵌套节点，但 UI 尚不编辑嵌套树。
 - 已经自由录入的训练事后关联模板时，不按名称猜测动作身份或计划组；这些记录继续作为计划外事实。
-- 原有每周次数/分钟目标暂时保留为兼容入口，并与 RuleSet 独立显示；后续可在确认替代路径后移除。
+- 旧 `weekly_exercise_goals` 兼容入口已在 v5 移除，首页目标统一由 RuleSet 评估和展示。
 - Stage 5 的 `recorded_calories`、`estimated_calories`、`weighted_reps` 和进阶/退阶权重明确延后，未伪装为本轮完成。
 
 ## 5. 手动验证步骤

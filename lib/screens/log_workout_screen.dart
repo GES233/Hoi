@@ -58,15 +58,21 @@ class _DraftSet {
 /// 补记模式本地暂存的动作
 class _DraftExercise {
   _DraftExercise({
+    required this.catalogExerciseId,
     required this.name,
     required this.category,
     required this.trackingType,
+    required this.loadConvention,
+    required this.repsConvention,
     this.note,
   });
 
+  int catalogExerciseId;
   String name;
   ExerciseCategory category;
   TrackingType trackingType;
+  LoadConvention loadConvention;
+  RepsConvention repsConvention;
   String? note;
   final List<_DraftSet> sets = [];
 }
@@ -126,24 +132,44 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
   }
 
   Future<void> _addExercise() async {
-    final draft = await showAddWorkoutExerciseDialog(context);
+    final exercises = await ref.read(databaseProvider).getExercises();
+    if (!mounted) return;
+    final draft = await showAddWorkoutExerciseDialog(
+      context,
+      exercises: exercises,
+    );
     if (draft == null) return;
     final db = ref.read(databaseProvider);
+    final catalogId =
+        draft.catalogExerciseId ??
+        await db.insertExercise(
+          name: draft.name,
+          category: draft.category,
+          trackingType: draft.trackingType,
+          loadConvention: draft.loadConvention,
+          repsConvention: draft.repsConvention,
+        );
     if (_isEditing) {
       await db.addWorkoutExercise(
         widget.editing!.id,
+        catalogExerciseId: catalogId,
         name: draft.name,
         category: draft.category,
         trackingType: draft.trackingType,
+        loadConvention: draft.loadConvention,
+        repsConvention: draft.repsConvention,
         note: draft.note,
       );
     } else {
       setState(
         () => _drafts.add(
           _DraftExercise(
+            catalogExerciseId: catalogId,
             name: draft.name,
             category: draft.category,
             trackingType: draft.trackingType,
+            loadConvention: draft.loadConvention,
+            repsConvention: draft.repsConvention,
             note: draft.note,
           ),
         ),
@@ -264,9 +290,12 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
         for (final exercise in _drafts) {
           final exerciseId = await db.addWorkoutExercise(
             savedId,
+            catalogExerciseId: exercise.catalogExerciseId,
             name: exercise.name,
             category: exercise.category,
             trackingType: exercise.trackingType,
+            loadConvention: exercise.loadConvention,
+            repsConvention: exercise.repsConvention,
             note: exercise.note,
           );
           for (final set in exercise.sets) {

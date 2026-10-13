@@ -201,6 +201,7 @@ class _TemplateFormDialogState extends ConsumerState<TemplateFormDialog> {
   late final TextEditingController _minimumController;
   late final TextEditingController _regularController;
   late final TextEditingController _noteController;
+  int? _selectedExerciseId;
   late ExerciseCategory _category;
   late PlanMetric _metric;
   bool _saving = false;
@@ -212,6 +213,7 @@ class _TemplateFormDialogState extends ConsumerState<TemplateFormDialog> {
     super.initState();
     final definition = widget.editing;
     final exercise = definition?.exercises.single;
+    _selectedExerciseId = exercise?.exerciseId;
     _metric = definition == null
         ? PlanMetric.duration
         : _shortcutMetric(definition);
@@ -270,20 +272,14 @@ class _TemplateFormDialogState extends ConsumerState<TemplateFormDialog> {
     try {
       final int catalogId;
       final editing = widget.editing;
-      if (editing == null) {
+      if (_selectedExerciseId == null) {
         catalogId = await db.insertExercise(
           name: _exerciseController.text,
           category: _category,
           trackingType: tracking,
         );
       } else {
-        catalogId = editing.exercises.single.exerciseId;
-        await db.updateExercise(
-          catalogId,
-          name: _exerciseController.text,
-          category: _category,
-          trackingType: tracking,
-        );
+        catalogId = _selectedExerciseId!;
       }
       final sets = _metric == PlanMetric.duration
           ? [
@@ -328,6 +324,10 @@ class _TemplateFormDialogState extends ConsumerState<TemplateFormDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final catalog = ref.watch(exercisesProvider).value ?? const <Exercise>[];
+    final selectedExists = catalog.any(
+      (exercise) => exercise.id == _selectedExerciseId,
+    );
     return AlertDialog(
       title: Text(_isEditing ? '编辑方案' : '新建方案'),
       content: Form(
@@ -342,13 +342,63 @@ class _TemplateFormDialogState extends ConsumerState<TemplateFormDialog> {
                 validator: (value) =>
                     value == null || value.trim().isEmpty ? '请输入方案名称' : null,
               ),
+              DropdownButtonFormField<int>(
+                key: ValueKey('exercise-${_selectedExerciseId ?? -1}'),
+                initialValue: _selectedExerciseId ?? -1,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: '动作库'),
+                items: [
+                  const DropdownMenuItem(value: -1, child: Text('新建自定义动作')),
+                  if (_selectedExerciseId != null && !selectedExists)
+                    DropdownMenuItem(
+                      value: _selectedExerciseId,
+                      child: Text(
+                        '${_exerciseController.text}（已归档）',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  for (final exercise in catalog.where(
+                    (exercise) =>
+                        exercise.trackingType != TrackingType.distance,
+                  ))
+                    DropdownMenuItem(
+                      value: exercise.id,
+                      child: Text(
+                        '${exercise.name} · ${exercise.trackingType.label}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: (value) {
+                  final id = value == -1 ? null : value;
+                  setState(() {
+                    _selectedExerciseId = id;
+                    if (id == null) {
+                      _exerciseController.clear();
+                      return;
+                    }
+                    final exercise = catalog.firstWhere(
+                      (item) => item.id == id,
+                    );
+                    _exerciseController.text = exercise.name;
+                    _category = exercise.category;
+                    _metric = exercise.trackingType == TrackingType.duration
+                        ? PlanMetric.duration
+                        : PlanMetric.sets;
+                  });
+                },
+              ),
               TextFormField(
                 controller: _exerciseController,
+                enabled: _selectedExerciseId == null,
                 decoration: const InputDecoration(labelText: '动作名称'),
                 validator: (value) =>
                     value == null || value.trim().isEmpty ? '请输入动作名称' : null,
               ),
               DropdownButtonFormField<ExerciseCategory>(
+                key: ValueKey(
+                  'template-category-${_selectedExerciseId ?? -1}-$_category',
+                ),
                 initialValue: _category,
                 decoration: const InputDecoration(labelText: '类别'),
                 items: [
@@ -358,11 +408,16 @@ class _TemplateFormDialogState extends ConsumerState<TemplateFormDialog> {
                       child: Text(category.label),
                     ),
                 ],
-                onChanged: (value) => setState(
-                  () => _category = value ?? ExerciseCategory.cardio,
-                ),
+                onChanged: _selectedExerciseId != null
+                    ? null
+                    : (value) => setState(
+                        () => _category = value ?? ExerciseCategory.cardio,
+                      ),
               ),
               DropdownButtonFormField<PlanMetric>(
+                key: ValueKey(
+                  'template-metric-${_selectedExerciseId ?? -1}-$_metric',
+                ),
                 initialValue: _metric,
                 decoration: const InputDecoration(labelText: '指标'),
                 items: const [
@@ -372,8 +427,11 @@ class _TemplateFormDialogState extends ConsumerState<TemplateFormDialog> {
                   ),
                   DropdownMenuItem(value: PlanMetric.sets, child: Text('有效组数')),
                 ],
-                onChanged: (value) =>
-                    setState(() => _metric = value ?? PlanMetric.duration),
+                onChanged: _selectedExerciseId != null
+                    ? null
+                    : (value) => setState(
+                        () => _metric = value ?? PlanMetric.duration,
+                      ),
               ),
               TextFormField(
                 controller: _minimumController,

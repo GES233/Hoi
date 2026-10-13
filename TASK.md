@@ -18,10 +18,11 @@
 
 ## 当前进度（2026-10-13）
 
-- Stage 0–4 核心链路已完成，并通过代码生成、静态分析和 50 项测试。
+- Stage 0–4 核心链路已完成，并通过代码生成、静态分析和 53 项测试。
 - Stage 5 按计划延后。
 - 方案管理页目前仍是单动作模板快捷编辑器；多动作模板的数据层、训练生成和训练页展示已完成，完整的多动作模板编排器尚未实现。
 - Rule AST 支持递归嵌套；当前结构化 UI 编辑一层 `ALL`／`ANY` 条件列表。
+- 后续增量已落地：v5 内置可复用动作目录；原“每周 3 次／90 分钟”改为默认激活、可编辑和可归档的周期目标预设。
 
 ## 施工原则
 
@@ -124,6 +125,7 @@ missing_data_policy
 
 ```text
 session_count       已完成训练场次数
+session_duration    已完成训练整场用时，单位秒
 valid_set_count     有效组数量
 reps                有效组次数合计
 duration            动作持续时间合计，单位秒
@@ -238,7 +240,7 @@ policy_version
 ## 阶段 2：指标注册表与规则评估器
 
 - [x] 定义 `MetricDefinition`、`MetricContext`、`MetricValue` 接口。
-- [x] 实现 `session_count`、`valid_set_count`、`reps`、`duration`、`distance`。
+- [x] 实现 `session_count`、`session_duration`、`valid_set_count`、`reps`、`duration`、`distance`。
 - [x] 定义单位、聚合方式和缺失数据策略。
 - [x] 定义 Rule AST 的 Dart 模型和 JSON 编解码。
 - [x] 实现 `RuleEvaluator`，支持比较、`ALL`、`ANY`。

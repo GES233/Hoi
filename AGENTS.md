@@ -31,11 +31,12 @@ lib/
 ├── main.dart                    # 入口：ProviderScope + MaterialApp（绿色主题）
 ├── database/database.dart       # drift 表定义与查询（database.g.dart 为生成文件，勿手改）
 ├── providers/app_providers.dart # riverpod providers（databaseProvider / selectedDateProvider（含 shift/select/goToday）/ setStopwatchClockProvider / weekDailyStatusProvider 等各 StreamProvider）
-├── screens/home_screen.dart     # 首页（组装者）：周条（选日期 + 本周落实五状态点阵，不可前往未来，点日期弹 DatePicker）、今日方案卡、开始/补记入口、进行中训练卡、当日运动记录（删除需确认）、饮食分区、本周运动卡；无 FAB，入口全在内容流内；卡片实现拆在 widgets/
+├── screens/home_screen.dart     # 首页（组装者）：周条、今日方案、周期目标、开始/补记入口、训练记录、饮食和本周事实概览；无 FAB
 ├── screens/workout_screen.dart  # 进行中训练页（组装者）：顶部紧凑总用时行 + 暂停训练/继续训练/结束训练；组级小秒表计时只存内存、全场至多一组在计时；放弃训练/删除动作收进 ⋮ 菜单且有确认；进度卡与动作卡实现拆在 widgets/
 ├── screens/log_workout_screen.dart # 补记与编辑已完成训练（补记时动组本地暂存、保存时一次写入；编辑模式组可点按编辑；可关联/取消方案）
-├── screens/plans_screen.dart       # 最低／常规方案管理：列表 + 新增/编辑/删除对话框
-└── widgets/                     # week_strip.dart（周条 WeekStrip + 状态点 StatusDot）、home_cards.dart（今日方案卡 TodayPlanCard、饮食分区 FoodSection、本周运动卡 WeeklyExerciseCard/GoalProgress）、home_workout_cards.dart（开始/补记入口 WorkoutEntryButtons、进行中训练卡 OngoingWorkoutCard、当日运动记录 WorkoutSection/WorkoutTile）、workout_cards.dart（方案实时进度卡 PlanProgressCard——达最低变成功态并弹一次反馈、动作卡 ExerciseCard——含组序号与汇总、组级小秒表高亮条、手填添加组预填上一组与再来一组、组点按编辑/左滑删除+撤销）、finish_workout_dialog.dart（结束训练对话框）、add_entry_dialogs.dart（饮食+周目标对话框）、workout_dialogs.dart（添加/编辑动作/组对话框与格式化）、set_stopwatch.dart（组级秒表纯 Dart 类，时钟可注入）
+├── screens/plans_screen.dart       # 训练模板管理；当前 UI 为单动作快捷编辑器，底层支持不可变多动作版本
+├── screens/rules_screen.dart       # 周期目标列表、结构化规则编辑器与内置预设激活
+└── widgets/                     # 首页/训练卡片、周条、饮食对话框、动作目录选择与组录入、小秒表等组件
 test/widget_test.dart            # 首页 widget 测试（内存数据库 + provider override）
 test/database_test.dart          # 训练记录数据库测试（NativeDatabase.memory()，注入固定 now）
 test/set_stopwatch_test.dart     # 组级秒表纯 Dart 测试（注入假时钟）
@@ -43,9 +44,9 @@ test/set_stopwatch_test.dart     # 组级秒表纯 Dart 测试（注入假时钟
 
 ## 数据库
 
-表：`food_entries`（饮食）、`workouts`（一次训练，含 status/startedAt/endedAt/pausedAt/pausedSeconds/totalSeconds/feeling 与方案快照列）、`workout_exercises`、`workout_sets`、`exercise_plans`（最低／常规方案，duration 阈值存秒、sets 存组数）、`rest_marks`（按日休息标记，date UNIQUE）、`favorite_foods`（常用食物，name UNIQUE）、`weekly_exercise_goals`（每周运动目标：次数+分钟，全表仅一行，空表时读 `AppDatabase.defaultWeeklyGoals`，更新时空表插入首行）。`date` 列只存日期部分，统一用 `AppDatabase.dateOnly()` 归一化；周查询以周一为起点（`AppDatabase.weekStart()`）。当前 `schemaVersion` 为 3（v1→v2 新增 `weekly_exercise_goals`；v2→v3 删除旧 `exercise_entries` 表并新增训练相关 5 张表，旧数据经确认丢弃）。
+表：`food_entries`、`favorite_foods`、`exercises`（动作目录，内置项有稳定 `builtinKey`）、`workout_templates`、`template_versions`、`template_exercises`、`template_sets`、`workouts`、`workout_exercises`、`workout_sets`、`rest_marks`、`rule_sets`（结构化周期目标，预设来源使用 `presetKey`）。`date` 统一经 `AppDatabase.dateOnly()` 归一化，周一为一周起点。当前 `schemaVersion` 为 5：v3→v4 经确认重置发布前开发数据并建立模板/规则模型；v4→v5 增加内置来源键并移除旧 `weekly_exercise_goals`。
 
-关键规则：全场至多一场 `inProgress` 训练（`startWorkout` 幂等）；有效组 = reps>0 或 durationSeconds>0，`finishWorkout` 无有效组抛 StateError；`totalSeconds` 未知即 null，绝不推算；计时方法接受可选 `now` 参数供测试注入；`discardWorkout`/`deleteWorkoutExercise` 显式级联删除子记录（内存库外键不一定开启，勿依赖 sqlite cascade），UI 层删除训练/动作前必须弹确认；达标按训练上的方案快照用 `AppDatabase.evaluateWorkout` 实时计算（只累计同名动作），方案编辑/删除不影响历史判定；周条点阵五状态由 `watchWeekDailyStatus` 提供（未设方案时仍区分有/无记录），`DailyStatus.noPlan` 不出现在周条结果中。组级小秒表（`SetStopwatch`）计时只存页面内存、不落库，应用被杀丢失正在走的一组是既定取舍；全场至多一个组在计时，时钟经 `setStopwatchClockProvider` 注入。组的滑动删除撤销是追加新行（sortOrder 变更大），不恢复原位置。
+关键规则：全场至多一场 `inProgress` 训练；有效组按动作记录口径判断；`totalSeconds` 未知即 null，`session_duration` 返回数据不足而不从动作组推算；训练和模板通过动作 ID 关联，名称只存快照；模板版本不可变，历史训练按版本快照用 `evaluateWorkoutTemplate` 计算；周期目标使用 Rule AST，默认激活“每周 3 次且记录 90 分钟”预设，归档后不会自动复活；内置动作幂等写入并可归档。删除训练/动作显式级联，UI 删除前需确认。组级小秒表只存页面内存，全场至多一个组计时；滑动删除撤销会追加新行，不恢复原 sortOrder。
 
 **改表规则**：递增 `schemaVersion` 并在 `AppDatabase` 中补 migration，然后跑 build_runner。常用食物按 name 冲突 upsert（`DoUpdate(target: [favoriteFoods.name])`），新增唯一列冲突时同样需显式指定 target。
 

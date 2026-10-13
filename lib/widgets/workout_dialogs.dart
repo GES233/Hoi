@@ -60,9 +60,12 @@ String describeTemplateProgress(TemplateProgress progress, Workout workout) {
 
 /// 添加动作的结果
 typedef ExerciseDraft = ({
+  int? catalogExerciseId,
   String name,
   ExerciseCategory category,
   TrackingType trackingType,
+  LoadConvention loadConvention,
+  RepsConvention repsConvention,
   String? note,
 });
 
@@ -77,16 +80,21 @@ typedef SetDraft = ({
   String? note,
 });
 
-/// 弹出「添加动作」对话框（名称 + 类别 + 可选备注）
-Future<ExerciseDraft?> showAddWorkoutExerciseDialog(BuildContext context) {
+/// 从动作目录选择，或创建一个自定义动作。
+Future<ExerciseDraft?> showAddWorkoutExerciseDialog(
+  BuildContext context, {
+  required List<Exercise> exercises,
+}) {
   return showDialog<ExerciseDraft>(
     context: context,
-    builder: (_) => const _AddExerciseDialog(),
+    builder: (_) => _AddExerciseDialog(exercises: exercises),
   );
 }
 
 class _AddExerciseDialog extends StatefulWidget {
-  const _AddExerciseDialog();
+  const _AddExerciseDialog({required this.exercises});
+
+  final List<Exercise> exercises;
 
   @override
   State<_AddExerciseDialog> createState() => _AddExerciseDialogState();
@@ -98,6 +106,11 @@ class _AddExerciseDialogState extends State<_AddExerciseDialog> {
   final _noteController = TextEditingController();
   ExerciseCategory _category = ExerciseCategory.cardio;
   TrackingType _trackingType = TrackingType.reps;
+  int _selectedId = -1;
+
+  Exercise? get _selectedExercise => _selectedId < 0
+      ? null
+      : widget.exercises.where((exercise) => exercise.id == _selectedId).first;
 
   @override
   void dispose() {
@@ -108,11 +121,15 @@ class _AddExerciseDialogState extends State<_AddExerciseDialog> {
 
   void _submit() {
     if (!(_formKey.currentState?.validate() ?? false)) return;
+    final selected = _selectedExercise;
     final note = _noteController.text.trim();
     Navigator.of(context).pop((
-      name: _nameController.text.trim(),
-      category: _category,
-      trackingType: _trackingType,
+      catalogExerciseId: selected?.id,
+      name: selected?.name ?? _nameController.text.trim(),
+      category: selected?.category ?? _category,
+      trackingType: selected?.trackingType ?? _trackingType,
+      loadConvention: selected?.loadConvention ?? LoadConvention.none,
+      repsConvention: selected?.repsConvention ?? RepsConvention.total,
       note: note.isEmpty ? null : note,
     ));
   }
@@ -126,31 +143,70 @@ class _AddExerciseDialogState extends State<_AddExerciseDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            DropdownButtonFormField<int>(
+              initialValue: _selectedId,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: '动作库'),
+              items: [
+                const DropdownMenuItem(value: -1, child: Text('新建自定义动作')),
+                for (final exercise in widget.exercises)
+                  DropdownMenuItem(
+                    value: exercise.id,
+                    child: Text(
+                      '${exercise.name} · ${exercise.trackingType.label}',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ],
+              onChanged: (value) {
+                final id = value ?? -1;
+                setState(() {
+                  _selectedId = id;
+                  if (id < 0) {
+                    _nameController.clear();
+                  } else {
+                    final exercise = _selectedExercise!;
+                    _nameController.text = exercise.name;
+                    _category = exercise.category;
+                    _trackingType = exercise.trackingType;
+                  }
+                });
+              },
+            ),
             TextFormField(
               controller: _nameController,
+              enabled: _selectedId < 0,
               decoration: const InputDecoration(labelText: '动作名称'),
               validator: (v) =>
                   (v == null || v.trim().isEmpty) ? '请输入动作名称' : null,
             ),
             DropdownButtonFormField<ExerciseCategory>(
+              key: ValueKey('category-$_selectedId-$_category'),
               initialValue: _category,
               decoration: const InputDecoration(labelText: '类别'),
               items: [
                 for (final c in ExerciseCategory.values)
                   DropdownMenuItem(value: c, child: Text(c.label)),
               ],
-              onChanged: (v) =>
-                  setState(() => _category = v ?? ExerciseCategory.cardio),
+              onChanged: _selectedId >= 0
+                  ? null
+                  : (v) => setState(
+                      () => _category = v ?? ExerciseCategory.cardio,
+                    ),
             ),
             DropdownButtonFormField<TrackingType>(
+              key: ValueKey('tracking-$_selectedId-$_trackingType'),
               initialValue: _trackingType,
               decoration: const InputDecoration(labelText: '记录方式'),
               items: [
                 for (final type in TrackingType.values)
                   DropdownMenuItem(value: type, child: Text(type.label)),
               ],
-              onChanged: (value) =>
-                  setState(() => _trackingType = value ?? TrackingType.reps),
+              onChanged: _selectedId >= 0
+                  ? null
+                  : (value) => setState(
+                      () => _trackingType = value ?? TrackingType.reps,
+                    ),
             ),
             TextFormField(
               controller: _noteController,

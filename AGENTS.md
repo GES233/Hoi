@@ -29,7 +29,9 @@ dart run flutter_launcher_icons   # 更换应用图标源图（assets/icon/）�
 ```
 lib/
 ├── main.dart                    # 入口：ProviderScope + MaterialApp（绿色主题）
-├── database/database.dart       # drift 表定义与查询（database.g.dart 为生成文件，勿手改）
+├── database/
+│   ├── database.dart            # drift 表定义、迁移、共享静态 API（database.g.dart 为生成文件，勿手改）
+│   └── daos/                    # 按饮食、训练、动作、模板、规则、每日状态拆分的兼容式 DAO extension
 ├── providers/app_providers.dart # riverpod providers（databaseProvider / selectedDateProvider（含 shift/select/goToday）/ setStopwatchClockProvider / weekDailyStatusProvider 等各 StreamProvider）
 ├── screens/home_screen.dart     # 首页（组装者）：周条、今日方案、周期目标、开始/补记入口、训练记录、饮食和本周事实概览；无 FAB
 ├── screens/workout_screen.dart  # 进行中训练页（组装者）：顶部紧凑总用时行 + 暂停训练/继续训练/结束训练；组级小秒表计时只存内存、全场至多一组在计时；放弃训练/删除动作收进 ⋮ 菜单且有确认；进度卡与动作卡实现拆在 widgets/

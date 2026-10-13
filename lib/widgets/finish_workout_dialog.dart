@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../database/database.dart';
 import '../providers/app_providers.dart';
 
 /// 结束训练对话框：可编辑总用时（分钟，预填计时值）与感受；

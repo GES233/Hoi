@@ -16,10 +16,12 @@ void main() {
   setUp(() {
     // closeStreamsSynchronously：关闭查询流时不走零时长 Timer，
     // 避免 FakeAsync 下 db.close() 等待永不触发的定时器而卡死（页面跳转后会触发该路径）
-    db = AppDatabase(DatabaseConnection(
-      NativeDatabase.memory(),
-      closeStreamsSynchronously: true,
-    ));
+    db = AppDatabase(
+      DatabaseConnection(
+        NativeDatabase.memory(),
+        closeStreamsSynchronously: true,
+      ),
+    );
     dbClosed = false;
   });
 
@@ -27,13 +29,14 @@ void main() {
     // 测试中途失败时不会走到 finishTest（路由未弹出、组件树未卸载），
     // 此时 db.close() 可能挂起；加超时兜底，避免整个测试文件卡死 10 分钟
     if (!dbClosed) {
-      await db
-          .close()
-          .timeout(const Duration(seconds: 15), onTimeout: () {});
+      await db.close().timeout(const Duration(seconds: 15), onTimeout: () {});
     }
   });
 
-  Future<void> pumpHome(WidgetTester tester, {DateTime Function()? clock}) async {
+  Future<void> pumpHome(
+    WidgetTester tester, {
+    DateTime Function()? clock,
+  }) async {
     // 默认 800x600 视口装不下整个首页，加高避免 ListView 懒加载把离屏内容移出树
     tester.view.physicalSize = const Size(1080, 2400);
     tester.view.devicePixelRatio = 1.0;
@@ -65,7 +68,8 @@ void main() {
   /// 周条不允许前往未来，这里只用于选中过去日期
   Future<void> selectDateInStrip(WidgetTester tester, DateTime target) async {
     final today = AppDatabase.dateOnly(DateTime.now());
-    final weeksBack = AppDatabase.weekStart(today)
+    final weeksBack =
+        AppDatabase.weekStart(today)
             .difference(AppDatabase.weekStart(target))
             .inDays ~/
         7;
@@ -77,34 +81,44 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  /// 预置一个组数型方案与一场关联它的已完成训练
-  /// （exerciseName 与动作同名，repsPerSet 组数为实际有效组数）
+  /// 预置一个组数型模板与一场使用该版本的已完成训练。
   Future<void> seedPlanAndWorkout({
     required int minSets,
     required int regularSets,
     required int actualSets,
   }) async {
     final today = AppDatabase.dateOnly(DateTime.now());
-    final planId = await db.insertExercisePlan(
-      name: '俯卧撑保底',
-      exerciseName: '俯卧撑',
-      category: ExerciseCategory.resistance,
-      metric: PlanMetric.sets,
-      minThreshold: minSets,
-      regularThreshold: regularSets,
-    );
-    final workoutId =
-        await db.insertCompletedWorkout(date: today, totalSeconds: 600);
-    final exerciseId = await db.addWorkoutExercise(
-      workoutId,
+    final exerciseId = await db.insertExercise(
       name: '俯卧撑',
       category: ExerciseCategory.resistance,
+      trackingType: TrackingType.reps,
     );
+    final templateId = await db.createWorkoutTemplate(
+      name: '俯卧撑保底',
+      exercises: [
+        TemplateExerciseInput(
+          exerciseId: exerciseId,
+          sets: [
+            for (var i = 0; i < regularSets; i++)
+              TemplateSetInput(reps: 1, minimumReps: i < minSets ? 1 : null),
+          ],
+        ),
+      ],
+    );
+    final definition = (await db.getTemplateDefinition(templateId))!;
+    final workout = await db.startWorkout(
+      now: today.add(const Duration(hours: 10)),
+      templateVersion: definition.version,
+    );
+    final actualExercise = (await db.getWorkoutExercises(workout.id)).single;
     for (var i = 0; i < actualSets; i++) {
-      await db.addWorkoutSet(exerciseId, reps: 10);
+      await db.addWorkoutSet(actualExercise.id, reps: 10);
     }
-    final plan = await db.getExercisePlan(planId);
-    await db.linkPlanToWorkout(workoutId, plan!);
+    await db.finishWorkout(
+      workout.id,
+      totalSeconds: 600,
+      now: today.add(const Duration(hours: 10, minutes: 10)),
+    );
   }
 
   testWidgets('首页展示开始与补记入口，无悬浮按钮与净热量', (tester) async {
@@ -130,6 +144,41 @@ void main() {
     await finishTest(tester);
   });
 
+  testWidgets('周期目标表单校验不完整规则并持久化结构化规则', (tester) async {
+    await pumpHome(tester);
+    await tester.tap(find.text('目标'));
+    await tester.pumpAndSettle();
+    expect(find.text('尚未设置每日或每周目标'), findsOneWidget);
+
+    await tester.tap(find.text('新建目标'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存'));
+    await tester.pump();
+    expect(find.text('请输入目标名称'), findsOneWidget);
+    expect(find.text('请输入有效数字'), findsOneWidget);
+
+    final fields = find.byType(TextFormField);
+    await tester.enterText(fields.first, '每周训练三次');
+    await tester.enterText(fields.last, '3');
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('每周训练三次'), findsOneWidget);
+    final saved = await db.select(db.ruleSets).get();
+    expect(saved, hasLength(1));
+    expect(saved.single.period, RulePeriod.week);
+    expect(saved.single.combineMode, RuleCombineMode.all);
+    expect(saved.single.expressionJson, contains('session_count'));
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.text('今日方案'), findsOneWidget);
+    expect(find.text('周期目标'), findsOneWidget);
+    expect(find.text('每周训练三次'), findsOneWidget);
+    expect(find.text('未开始'), findsOneWidget);
+    await finishTest(tester);
+  });
+
   testWidgets('插入饮食和已完成训练后摘要更新，删除后消失', (tester) async {
     await pumpHome(tester);
     final today = AppDatabase.dateOnly(DateTime.now());
@@ -142,8 +191,10 @@ void main() {
         calories: const Value(140),
       ),
     );
-    final workoutId =
-        await db.insertCompletedWorkout(date: today, totalSeconds: 1800);
+    final workoutId = await db.insertCompletedWorkout(
+      date: today,
+      totalSeconds: 1800,
+    );
     await db.addWorkoutExercise(
       workoutId,
       name: '跑步',
@@ -158,10 +209,12 @@ void main() {
     expect(find.text('总用时 30 分钟'), findsOneWidget);
 
     // 删除饮食条目（运动分区在饮食分区之前，需精确定位「鸡蛋」所在行）
-    await tester.tap(find.descendant(
-      of: find.ancestor(of: find.text('鸡蛋'), matching: find.byType(ListTile)),
-      matching: find.byIcon(Icons.delete_outline),
-    ));
+    await tester.tap(
+      find.descendant(
+        of: find.ancestor(of: find.text('鸡蛋'), matching: find.byType(ListTile)),
+        matching: find.byIcon(Icons.delete_outline),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text('鸡蛋'), findsNothing);
     expect(find.text('跑步'), findsOneWidget);
@@ -187,19 +240,13 @@ void main() {
     // 切到前一天：显示「回到今天」与历史日期辅助文案
     final yesterday = today.subtract(const Duration(days: 1));
     await selectDateInStrip(tester, yesterday);
-    expect(
-      find.text(HomeScreen.formatDate(yesterday)),
-      findsOneWidget,
-    );
+    expect(find.text(HomeScreen.formatDate(yesterday)), findsOneWidget);
     expect(find.text('米饭'), findsNothing);
     expect(find.text('回到今天'), findsOneWidget);
     expect(find.text('「开始运动」从现在开始计时；补记归属选中日期'), findsOneWidget);
     // 历史日期：补记为主按钮（FilledButton），开始为次按钮（OutlinedButton）
     expect(
-      find.ancestor(
-        of: find.text('补记运动'),
-        matching: find.byType(FilledButton),
-      ),
+      find.ancestor(of: find.text('补记运动'), matching: find.byType(FilledButton)),
       findsOneWidget,
     );
     expect(
@@ -218,10 +265,7 @@ void main() {
     expect(find.text('米饭'), findsOneWidget);
     // 今天：开始运动为主按钮
     expect(
-      find.ancestor(
-        of: find.text('开始运动'),
-        matching: find.byType(FilledButton),
-      ),
+      find.ancestor(of: find.text('开始运动'), matching: find.byType(FilledButton)),
       findsOneWidget,
     );
 
@@ -250,12 +294,20 @@ void main() {
     expect(find.text('0 / 90 分钟'), findsOneWidget);
 
     // 一场训练含多个动作多组，次数仍只计 1
-    final workoutId =
-        await db.insertCompletedWorkout(date: today, totalSeconds: 1800);
+    final workoutId = await db.insertCompletedWorkout(
+      date: today,
+      totalSeconds: 1800,
+    );
     final e1 = await db.addWorkoutExercise(
-        workoutId, name: '深蹲', category: ExerciseCategory.resistance);
+      workoutId,
+      name: '深蹲',
+      category: ExerciseCategory.resistance,
+    );
     final e2 = await db.addWorkoutExercise(
-        workoutId, name: '跑步', category: ExerciseCategory.cardio);
+      workoutId,
+      name: '跑步',
+      category: ExerciseCategory.cardio,
+    );
     await db.addWorkoutSet(e1, reps: 10);
     await db.addWorkoutSet(e1, reps: 10);
     await db.addWorkoutSet(e2, durationSeconds: 1800);
@@ -311,7 +363,7 @@ void main() {
     await pumpHome(tester);
 
     expect(find.text('俯卧撑保底'), findsOneWidget);
-    expect(find.textContaining('未达最低'), findsOneWidget);
+    expect(find.textContaining('已记录 1/3 组'), findsOneWidget);
     // 不使用失败文案或警告图标
     expect(find.textContaining('失败'), findsNothing);
     expect(find.byIcon(Icons.warning_amber), findsNothing);
@@ -422,18 +474,24 @@ void main() {
   testWidgets('首页删除训练需二次确认', (tester) async {
     await pumpHome(tester);
     final today = AppDatabase.dateOnly(DateTime.now());
-    final workoutId =
-        await db.insertCompletedWorkout(date: today, totalSeconds: 600);
+    final workoutId = await db.insertCompletedWorkout(
+      date: today,
+      totalSeconds: 600,
+    );
     await db.addWorkoutExercise(
-        workoutId, name: '跑步', category: ExerciseCategory.cardio);
+      workoutId,
+      name: '跑步',
+      category: ExerciseCategory.cardio,
+    );
     await tester.pumpAndSettle();
     expect(find.text('跑步'), findsOneWidget);
 
-    Future<void> tapDelete() => tester.tap(find.descendant(
-          of: find.ancestor(
-              of: find.text('跑步'), matching: find.byType(ListTile)),
-          matching: find.byIcon(Icons.delete_outline),
-        ));
+    Future<void> tapDelete() => tester.tap(
+      find.descendant(
+        of: find.ancestor(of: find.text('跑步'), matching: find.byType(ListTile)),
+        matching: find.byIcon(Icons.delete_outline),
+      ),
+    );
 
     // 取消：不删除
     await tapDelete();
@@ -455,33 +513,47 @@ void main() {
 
   testWidgets('周条停留在本周时不可切到下一周', (tester) async {
     await pumpHome(tester);
-    final next = tester.widget<IconButton>(find.ancestor(
-      of: find.byIcon(Icons.chevron_right),
-      matching: find.byType(IconButton),
-    ));
+    final next = tester.widget<IconButton>(
+      find.ancestor(
+        of: find.byIcon(Icons.chevron_right),
+        matching: find.byType(IconButton),
+      ),
+    );
     expect(next.onPressed, isNull);
     // 上一周可用
-    final prev = tester.widget<IconButton>(find.ancestor(
-      of: find.byIcon(Icons.chevron_left),
-      matching: find.byType(IconButton),
-    ));
+    final prev = tester.widget<IconButton>(
+      find.ancestor(
+        of: find.byIcon(Icons.chevron_left),
+        matching: find.byType(IconButton),
+      ),
+    );
     expect(prev.onPressed, isNotNull);
 
     await finishTest(tester);
   });
 
   testWidgets('训练页实时显示方案进度，达到最低时给出反馈', (tester) async {
-    final planId = await db.insertExercisePlan(
-      name: '俯卧撑保底',
-      exerciseName: '俯卧撑',
+    final exerciseId = await db.insertExercise(
+      name: '俯卧撑',
       category: ExerciseCategory.resistance,
-      metric: PlanMetric.sets,
-      minThreshold: 1,
-      regularThreshold: 3,
+      trackingType: TrackingType.reps,
     );
-    final plan = await db.getExercisePlan(planId);
+    final templateId = await db.createWorkoutTemplate(
+      name: '俯卧撑保底',
+      exercises: [
+        TemplateExerciseInput(
+          exerciseId: exerciseId,
+          sets: const [
+            TemplateSetInput(reps: 1, minimumReps: 1),
+            TemplateSetInput(reps: 1),
+            TemplateSetInput(reps: 1),
+          ],
+        ),
+      ],
+    );
+    final definition = (await db.getTemplateDefinition(templateId))!;
     await pumpHome(tester);
-    await db.startWorkout(plan: plan);
+    await db.startWorkout(templateVersion: definition.version);
     await tester.pumpAndSettle();
 
     // 训练页有常驻 periodic Timer，进入后不能 pumpAndSettle
@@ -511,6 +583,62 @@ void main() {
     await tester.pageBack();
     await pumpFrames();
 
+    await finishTest(tester);
+  });
+
+  testWidgets('多动作训练区分计划组、跳过组、额外组与计划外动作', (tester) async {
+    final squatId = await db.insertExercise(
+      name: '深蹲',
+      category: ExerciseCategory.resistance,
+      trackingType: TrackingType.reps,
+    );
+    final runId = await db.insertExercise(
+      name: '跑步',
+      category: ExerciseCategory.cardio,
+      trackingType: TrackingType.duration,
+    );
+    final templateId = await db.createWorkoutTemplate(
+      name: '全身训练',
+      exercises: [
+        TemplateExerciseInput(
+          exerciseId: squatId,
+          sets: const [TemplateSetInput(reps: 10)],
+        ),
+        TemplateExerciseInput(
+          exerciseId: runId,
+          sets: const [TemplateSetInput(durationSeconds: 600)],
+        ),
+      ],
+    );
+    final definition = (await db.getTemplateDefinition(templateId))!;
+    final workout = await db.startWorkout(templateVersion: definition.version);
+    final exercises = await db.getWorkoutExercises(workout.id);
+    await db.addWorkoutSet(exercises.first.id, setStatus: SetStatus.skipped);
+    await db.addWorkoutSet(exercises.first.id, reps: 12); // 已超出唯一计划组
+    final extraExercise = await db.addWorkoutExercise(
+      workout.id,
+      name: '散步',
+      category: ExerciseCategory.cardio,
+      trackingType: TrackingType.duration,
+    );
+    await db.addWorkoutSet(extraExercise, durationSeconds: 300);
+
+    await pumpHome(tester);
+    await tester.tap(find.text('继续训练'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(find.text('深蹲'), findsOneWidget);
+    expect(find.text('跑步'), findsOneWidget);
+    expect(find.text('散步'), findsOneWidget);
+    expect(find.textContaining('计划动作 · 已记录 1/1'), findsOneWidget);
+    expect(find.textContaining('计划组 · 已跳过'), findsOneWidget);
+    expect(find.textContaining('额外组'), findsOneWidget);
+    expect(find.text('计划外动作'), findsOneWidget);
+
+    await tester.pageBack();
+    await tester.pump();
     await finishTest(tester);
   });
 
@@ -547,8 +675,7 @@ void main() {
     expect(find.text('编辑组'), findsOneWidget);
     expect(find.text('10'), findsOneWidget); // 次数已预填
     await tester.enterText(find.byType(TextField).first, '12');
-    await tester.enterText(
-        find.byType(TextField).last, '前 8 个全程，后 4 个退阶');
+    await tester.enterText(find.byType(TextField).last, '前 8 个全程，后 4 个退阶');
     await tester.tap(find.text('保存'));
     await pumpFrames();
     await pumpFrames();
@@ -557,7 +684,7 @@ void main() {
     final sets = await db.getWorkoutSets(workout!.id);
     expect(sets.single.reps, 12);
     expect(sets.single.note, '前 8 个全程，后 4 个退阶');
-    expect(find.textContaining('第 1 组　12 次'), findsOneWidget);
+    expect(find.textContaining('自由组　12 次'), findsOneWidget);
 
     await tester.pageBack();
     await pumpFrames();

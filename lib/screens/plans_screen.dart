@@ -5,25 +5,55 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../database/database.dart';
 import '../providers/app_providers.dart';
 
-/// 方案阈值的可读描述，如「最低 15 分钟 / 常规 30 分钟」
-String describePlanThresholds(ExercisePlan p) {
-  String fmt(int v) =>
-      p.metric == PlanMetric.duration ? '${v ~/ 60} 分钟' : '$v 组';
-  return '最低 ${fmt(p.minThreshold)} / 常规 ${fmt(p.regularThreshold)}';
+PlanMetric _shortcutMetric(WorkoutTemplateDefinition definition) =>
+    definition.exercises.single.trackingTypeSnapshot == TrackingType.duration
+    ? PlanMetric.duration
+    : PlanMetric.sets;
+
+bool _isShortcutTemplate(WorkoutTemplateDefinition definition) {
+  if (definition.exercises.length != 1 || definition.sets.isEmpty) return false;
+  final tracking = definition.exercises.single.trackingTypeSnapshot;
+  if (tracking == TrackingType.duration) {
+    return definition.sets.length == 1 &&
+        definition.sets.single.durationSeconds != null;
+  }
+  if (tracking == TrackingType.reps) {
+    return definition.sets.every((set) => set.reps == 1);
+  }
+  return false;
 }
 
-/// 方案管理页：列表 + 新增 / 编辑 / 删除
+/// 单动作快捷模板的最低／常规描述。
+String describeTemplateThresholds(WorkoutTemplateDefinition definition) {
+  final metric = _shortcutMetric(definition);
+  final minimum = metric == PlanMetric.duration
+      ? definition.sets.single.minimumDurationSeconds
+      : definition.sets.where((set) => set.minimumReps != null).length;
+  final regular = metric == PlanMetric.duration
+      ? definition.sets.single.durationSeconds!
+      : definition.sets.length;
+  String format(int value) =>
+      metric == PlanMetric.duration ? '${value ~/ 60} 分钟' : '$value 组';
+  final minimumText = minimum == null || minimum == 0
+      ? '未设置最低量'
+      : '最低 ${format(minimum)}';
+  return '$minimumText / 常规 ${format(regular)}';
+}
+
+/// 方案管理页目前提供单动作模板快捷编辑；底层模型支持多动作、多计划组。
 class PlansScreen extends ConsumerWidget {
   const PlansScreen({super.key});
 
-  Future<void> _confirmDelete(
-      BuildContext context, WidgetRef ref, ExercisePlan plan) async {
+  Future<void> _confirmArchive(
+    BuildContext context,
+    WidgetRef ref,
+    WorkoutTemplateSummary summary,
+  ) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('删除方案'),
-        content:
-            Text('删除「${plan.name}」？不影响已有训练记录，历史训练仍按当时保存的方案条件判定。'),
+        title: const Text('归档方案'),
+        content: Text('归档「${summary.version.name}」？历史训练和旧版本会继续保留。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -31,113 +61,194 @@ class PlansScreen extends ConsumerWidget {
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('删除'),
+            child: const Text('归档'),
           ),
         ],
       ),
     );
     if (confirmed == true) {
-      await ref.read(databaseProvider).deleteExercisePlan(plan.id);
+      await ref
+          .read(databaseProvider)
+          .archiveWorkoutTemplate(summary.template.id);
     }
+  }
+
+  Future<void> _edit(
+    BuildContext context,
+    WidgetRef ref,
+    WorkoutTemplateSummary summary,
+  ) async {
+    final definition = await ref
+        .read(databaseProvider)
+        .getTemplateDefinition(summary.template.id);
+    if (!context.mounted || definition == null) return;
+    if (!_isShortcutTemplate(definition)) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('多动作模板将在完整模板编辑器中开放编辑')));
+      return;
+    }
+    await showTemplateFormDialog(context, editing: definition);
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final plans = ref.watch(exercisePlansProvider).value ?? [];
+    final templatesAsync = ref.watch(workoutTemplatesProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('运动方案')),
-      body: plans.isEmpty
-          ? const Center(child: Text('尚未设置最低／常规方案'))
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                for (final p in plans)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Card(
-                      child: ListTile(
-                        title: Text(p.name),
-                        subtitle: Text(
-                          '${p.exerciseName}（${p.category.label}） · '
-                          '${p.metric == PlanMetric.duration ? '时长' : '有效组数'} · '
-                          '${describePlanThresholds(p)}'
-                          '${p.note != null && p.note!.isNotEmpty ? '\n${p.note}' : ''}',
-                        ),
-                        isThreeLine: p.note != null && p.note!.isNotEmpty,
-                        onTap: () => showPlanFormDialog(context, editing: p),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.delete_outline),
-                          tooltip: '删除方案',
-                          onPressed: () => _confirmDelete(context, ref, p),
+      body: templatesAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (_, _) => const Center(child: Text('方案加载失败')),
+        data: (templates) => templates.isEmpty
+            ? const Center(child: Text('尚未设置最低／常规方案'))
+            : ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  for (final summary in templates)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Card(
+                        child: _TemplateListTile(
+                          summary: summary,
+                          onTap: () => _edit(context, ref, summary),
+                          onArchive: () =>
+                              _confirmArchive(context, ref, summary),
                         ),
                       ),
                     ),
-                  ),
-              ],
-            ),
+                ],
+              ),
+      ),
       floatingActionButton: FloatingActionButton.extended(
         heroTag: 'add_plan',
         icon: const Icon(Icons.add),
         label: const Text('新建方案'),
-        onPressed: () => showPlanFormDialog(context),
+        onPressed: () => showTemplateFormDialog(context),
       ),
     );
   }
 }
 
-/// 弹出「新建 / 编辑方案」对话框
-Future<void> showPlanFormDialog(BuildContext context, {ExercisePlan? editing}) {
+class _TemplateListTile extends ConsumerWidget {
+  const _TemplateListTile({
+    required this.summary,
+    required this.onTap,
+    required this.onArchive,
+  });
+
+  final WorkoutTemplateSummary summary;
+  final VoidCallback onTap;
+  final VoidCallback onArchive;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final definitionAsync = ref.watch(
+      templateDefinitionProvider(summary.template.id),
+    );
+    final definition = definitionAsync.value;
+    var subtitle = definitionAsync.hasError ? '模板详情加载失败' : '加载中…';
+    if (definition != null) {
+      if (_isShortcutTemplate(definition)) {
+        final note = definition.version.note;
+        subtitle =
+            '${definition.exercises.single.exerciseNameSnapshot}（${definition.exercises.single.categorySnapshot.label}） · '
+            '${_shortcutMetric(definition) == PlanMetric.duration ? '时长' : '有效组数'} · '
+            '${describeTemplateThresholds(definition)}'
+            '${note != null && note.isNotEmpty ? '\n$note' : ''}';
+      } else {
+        subtitle =
+            '${definition.exercises.length} 个动作 · ${definition.sets.length} 个计划组';
+      }
+    }
+    return ListTile(
+      title: Text(
+        '${summary.version.name} · v${summary.version.versionNumber}',
+      ),
+      subtitle: Text(subtitle),
+      isThreeLine: subtitle.contains('\n'),
+      onTap: onTap,
+      trailing: IconButton(
+        icon: const Icon(Icons.archive_outlined),
+        tooltip: '归档方案',
+        onPressed: onArchive,
+      ),
+    );
+  }
+}
+
+Future<void> showTemplateFormDialog(
+  BuildContext context, {
+  WorkoutTemplateDefinition? editing,
+}) {
   return showDialog<void>(
     context: context,
-    builder: (_) => PlanFormDialog(editing: editing),
+    builder: (_) => TemplateFormDialog(editing: editing),
   );
 }
 
-class PlanFormDialog extends ConsumerStatefulWidget {
-  const PlanFormDialog({super.key, this.editing});
+class TemplateFormDialog extends ConsumerStatefulWidget {
+  const TemplateFormDialog({super.key, this.editing});
 
-  /// 非空表示编辑已有方案
-  final ExercisePlan? editing;
+  final WorkoutTemplateDefinition? editing;
 
   @override
-  ConsumerState<PlanFormDialog> createState() => _PlanFormDialogState();
+  ConsumerState<TemplateFormDialog> createState() => _TemplateFormDialogState();
 }
 
-class _PlanFormDialogState extends ConsumerState<PlanFormDialog> {
+class _TemplateFormDialogState extends ConsumerState<TemplateFormDialog> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameController;
   late final TextEditingController _exerciseController;
-  late final TextEditingController _minController;
+  late final TextEditingController _minimumController;
   late final TextEditingController _regularController;
   late final TextEditingController _noteController;
   late ExerciseCategory _category;
   late PlanMetric _metric;
+  bool _saving = false;
 
   bool get _isEditing => widget.editing != null;
 
   @override
   void initState() {
     super.initState();
-    final p = widget.editing;
-    _nameController = TextEditingController(text: p?.name ?? '');
-    _exerciseController = TextEditingController(text: p?.exerciseName ?? '');
-    _category = p?.category ?? ExerciseCategory.cardio;
-    _metric = p?.metric ?? PlanMetric.duration;
-    // duration 指标存秒，表单以分钟输入
-    String toInput(int v) =>
-        _metric == PlanMetric.duration ? '${v ~/ 60}' : '$v';
-    _minController =
-        TextEditingController(text: p == null ? '' : toInput(p.minThreshold));
-    _regularController = TextEditingController(
-        text: p == null ? '' : toInput(p.regularThreshold));
-    _noteController = TextEditingController(text: p?.note ?? '');
+    final definition = widget.editing;
+    final exercise = definition?.exercises.single;
+    _metric = definition == null
+        ? PlanMetric.duration
+        : _shortcutMetric(definition);
+    _nameController = TextEditingController(
+      text: definition?.version.name ?? '',
+    );
+    _exerciseController = TextEditingController(
+      text: exercise?.exerciseNameSnapshot ?? '',
+    );
+    _category = exercise?.categorySnapshot ?? ExerciseCategory.cardio;
+    final minimum = definition == null
+        ? null
+        : _metric == PlanMetric.duration
+        ? definition.sets.single.minimumDurationSeconds
+        : definition.sets.where((set) => set.minimumReps != null).length;
+    final regular = definition == null
+        ? null
+        : _metric == PlanMetric.duration
+        ? definition.sets.single.durationSeconds
+        : definition.sets.length;
+    String inputValue(int? value) {
+      if (value == null) return '';
+      return _metric == PlanMetric.duration ? '${value ~/ 60}' : '$value';
+    }
+
+    _minimumController = TextEditingController(text: inputValue(minimum));
+    _regularController = TextEditingController(text: inputValue(regular));
+    _noteController = TextEditingController(
+      text: definition?.version.note ?? '',
+    );
   }
 
   @override
   void dispose() {
     _nameController.dispose();
     _exerciseController.dispose();
-    _minController.dispose();
+    _minimumController.dispose();
     _regularController.dispose();
     _noteController.dispose();
     super.dispose();
@@ -145,43 +256,74 @@ class _PlanFormDialogState extends ConsumerState<PlanFormDialog> {
 
   String get _unitLabel => _metric == PlanMetric.duration ? '分钟' : '组数';
 
-  String? _validateThreshold(String? v, String label) {
-    final n = int.tryParse(v?.trim() ?? '');
-    if (n == null || n <= 0) return '$label需大于 0';
-    return null;
-  }
-
   Future<void> _submit() async {
-    if (!(_formKey.currentState?.validate() ?? false)) return;
+    if (_saving || !(_formKey.currentState?.validate() ?? false)) return;
+    setState(() => _saving = true);
     final db = ref.read(databaseProvider);
-    final minInput = int.parse(_minController.text.trim());
+    final minimumText = _minimumController.text.trim();
+    final minimumInput = minimumText.isEmpty ? null : int.parse(minimumText);
     final regularInput = int.parse(_regularController.text.trim());
-    // duration 指标：分钟换算为秒存储；sets 指标：直接存组数
-    int toStore(int v) => _metric == PlanMetric.duration ? v * 60 : v;
+    final tracking = _metric == PlanMetric.duration
+        ? TrackingType.duration
+        : TrackingType.reps;
     final note = _noteController.text.trim();
-    if (_isEditing) {
-      await db.updateExercisePlan(
-        widget.editing!.id,
-        name: _nameController.text.trim(),
-        exerciseName: _exerciseController.text.trim(),
-        category: _category,
-        metric: _metric,
-        minThreshold: toStore(minInput),
-        regularThreshold: toStore(regularInput),
-        note: note.isEmpty ? null : note,
-      );
-    } else {
-      await db.insertExercisePlan(
-        name: _nameController.text.trim(),
-        exerciseName: _exerciseController.text.trim(),
-        category: _category,
-        metric: _metric,
-        minThreshold: toStore(minInput),
-        regularThreshold: toStore(regularInput),
-        note: note.isEmpty ? null : note,
-      );
+    try {
+      final int catalogId;
+      final editing = widget.editing;
+      if (editing == null) {
+        catalogId = await db.insertExercise(
+          name: _exerciseController.text,
+          category: _category,
+          trackingType: tracking,
+        );
+      } else {
+        catalogId = editing.exercises.single.exerciseId;
+        await db.updateExercise(
+          catalogId,
+          name: _exerciseController.text,
+          category: _category,
+          trackingType: tracking,
+        );
+      }
+      final sets = _metric == PlanMetric.duration
+          ? [
+              TemplateSetInput(
+                durationSeconds: regularInput * 60,
+                minimumDurationSeconds: minimumInput == null
+                    ? null
+                    : minimumInput * 60,
+              ),
+            ]
+          : [
+              for (var i = 0; i < regularInput; i++)
+                TemplateSetInput(
+                  reps: 1,
+                  minimumReps: minimumInput != null && i < minimumInput
+                      ? 1
+                      : null,
+                ),
+            ];
+      final exercises = [
+        TemplateExerciseInput(exerciseId: catalogId, sets: sets),
+      ];
+      if (editing == null) {
+        await db.createWorkoutTemplate(
+          name: _nameController.text,
+          exercises: exercises,
+          note: note.isEmpty ? null : note,
+        );
+      } else {
+        await db.reviseWorkoutTemplate(
+          editing.template.id,
+          name: _nameController.text,
+          exercises: exercises,
+          note: note.isEmpty ? null : note,
+        );
+      }
+      if (mounted) Navigator.of(context).pop();
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
-    if (mounted) Navigator.of(context).pop();
   }
 
   @override
@@ -197,54 +339,67 @@ class _PlanFormDialogState extends ConsumerState<PlanFormDialog> {
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(labelText: '方案名称'),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? '请输入方案名称' : null,
+                validator: (value) =>
+                    value == null || value.trim().isEmpty ? '请输入方案名称' : null,
               ),
               TextFormField(
                 controller: _exerciseController,
-                decoration: const InputDecoration(labelText: '绑定动作名'),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? '请输入绑定动作名' : null,
+                decoration: const InputDecoration(labelText: '动作名称'),
+                validator: (value) =>
+                    value == null || value.trim().isEmpty ? '请输入动作名称' : null,
               ),
               DropdownButtonFormField<ExerciseCategory>(
                 initialValue: _category,
                 decoration: const InputDecoration(labelText: '类别'),
                 items: [
-                  for (final c in ExerciseCategory.values)
-                    DropdownMenuItem(value: c, child: Text(c.label)),
+                  for (final category in ExerciseCategory.values)
+                    DropdownMenuItem(
+                      value: category,
+                      child: Text(category.label),
+                    ),
                 ],
-                onChanged: (v) =>
-                    setState(() => _category = v ?? ExerciseCategory.cardio),
+                onChanged: (value) => setState(
+                  () => _category = value ?? ExerciseCategory.cardio,
+                ),
               ),
               DropdownButtonFormField<PlanMetric>(
                 initialValue: _metric,
                 decoration: const InputDecoration(labelText: '指标'),
                 items: const [
                   DropdownMenuItem(
-                      value: PlanMetric.duration, child: Text('持续时长')),
-                  DropdownMenuItem(
-                      value: PlanMetric.sets, child: Text('有效组数')),
+                    value: PlanMetric.duration,
+                    child: Text('持续时长'),
+                  ),
+                  DropdownMenuItem(value: PlanMetric.sets, child: Text('有效组数')),
                 ],
-                onChanged: (v) =>
-                    setState(() => _metric = v ?? PlanMetric.duration),
+                onChanged: (value) =>
+                    setState(() => _metric = value ?? PlanMetric.duration),
               ),
               TextFormField(
-                controller: _minController,
-                decoration: InputDecoration(labelText: '最低阈值（$_unitLabel）'),
+                controller: _minimumController,
+                decoration: InputDecoration(labelText: '最低量（$_unitLabel，可选）'),
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                validator: (v) => _validateThreshold(v, '最低阈值'),
+                validator: (value) {
+                  final text = value?.trim() ?? '';
+                  if (text.isEmpty) return null;
+                  final parsed = int.tryParse(text);
+                  if (parsed == null || parsed <= 0) return '最低量需大于 0，或留空';
+                  return null;
+                },
               ),
               TextFormField(
                 controller: _regularController,
-                decoration: InputDecoration(labelText: '常规阈值（$_unitLabel）'),
+                decoration: InputDecoration(labelText: '常规量（$_unitLabel）'),
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                validator: (v) {
-                  final error = _validateThreshold(v, '常规阈值');
-                  if (error != null) return error;
-                  final min = int.tryParse(_minController.text.trim()) ?? 0;
-                  if (int.parse(v!.trim()) < min) return '常规阈值不能低于最低阈值';
+                validator: (value) {
+                  final regular = int.tryParse(value?.trim() ?? '');
+                  if (regular == null || regular <= 0) return '常规量需大于 0';
+                  final minimum = int.tryParse(_minimumController.text.trim());
+                  if (minimum != null && regular < minimum) {
+                    return '常规量不能低于最低量';
+                  }
                   return null;
                 },
               ),
@@ -258,10 +413,13 @@ class _PlanFormDialogState extends ConsumerState<PlanFormDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: _saving ? null : () => Navigator.of(context).pop(),
           child: const Text('取消'),
         ),
-        FilledButton(onPressed: _submit, child: const Text('保存')),
+        FilledButton(
+          onPressed: _saving ? null : _submit,
+          child: const Text('保存'),
+        ),
       ],
     );
   }

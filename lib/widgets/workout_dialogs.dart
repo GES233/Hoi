@@ -20,48 +20,60 @@ String describeSet(WorkoutSet s) {
   if (reps != null && reps > 0) parts.add('$reps 次');
   final duration = s.durationSeconds;
   if (duration != null && duration > 0) {
-    parts.add(duration >= 60
-        ? '${(duration / 60).toStringAsFixed(duration % 60 == 0 ? 0 : 1)} 分钟'
-        : '$duration 秒');
+    parts.add(
+      duration >= 60
+          ? '${(duration / 60).toStringAsFixed(duration % 60 == 0 ? 0 : 1)} 分钟'
+          : '$duration 秒',
+    );
   }
+  final distance = s.distanceMeters;
+  if (distance != null && distance > 0) parts.add('$distance 米');
   final weight = s.weightKg;
   if (weight != null && weight > 0) parts.add('$weight kg');
-  if (parts.isEmpty) parts.add('（无效组）');
+  if (s.setStatus == SetStatus.skipped) {
+    parts.insert(0, '已跳过');
+  } else if (parts.isEmpty) {
+    parts.add('（无效组）');
+  }
   final note = s.note;
   if (note != null && note.isNotEmpty) parts.add(note);
   return parts.join(' · ');
 }
 
-/// 达标反馈文案：常规/最低完成用明确的成功语气；
-/// 未达最低用中性文案，不使用失败措辞
-String describePlanEvaluation(PlanEvaluation ev, Workout w) {
-  final name = w.planName ?? '方案';
-  switch (ev.tier) {
+/// 模板完成反馈：常规/最低完成用明确的成功语气；未达最低保持中性。
+String describeTemplateProgress(TemplateProgress progress, Workout workout) {
+  final name = workout.templateNameSnapshot ?? '方案';
+  switch (progress.tier) {
     case PlanTier.regular:
       return '常规方案完成（$name）';
     case PlanTier.min:
       return '最低方案完成（$name）';
     case PlanTier.belowMin:
-      final isDuration = w.planMetric == PlanMetric.duration;
-      final actual =
-          isDuration ? '${ev.actual ~/ 60} 分钟' : '${ev.actual} 组';
-      final target = isDuration
-          ? '${(w.planMin ?? 0) ~/ 60} 分钟'
-          : '${w.planMin ?? 0} 组';
-      return '已记录，未达最低（$actual/$target）';
+      if (progress.minimumTotal == 0) {
+        return '已记录，常规完成 ${progress.regularCompleted}/${progress.regularTotal} 组';
+      }
+      return '已记录，最低完成 ${progress.minimumCompleted}/${progress.minimumTotal} 组';
     case PlanTier.none:
       return '已记录';
   }
 }
 
 /// 添加动作的结果
-typedef ExerciseDraft = ({String name, ExerciseCategory category, String? note});
+typedef ExerciseDraft = ({
+  String name,
+  ExerciseCategory category,
+  TrackingType trackingType,
+  String? note,
+});
 
 /// 添加组的结果
 typedef SetDraft = ({
   int? reps,
   int? durationSeconds,
+  double? distanceMeters,
   double? weightKg,
+  SetRole setRole,
+  SetStatus setStatus,
   String? note,
 });
 
@@ -85,6 +97,7 @@ class _AddExerciseDialogState extends State<_AddExerciseDialog> {
   final _nameController = TextEditingController();
   final _noteController = TextEditingController();
   ExerciseCategory _category = ExerciseCategory.cardio;
+  TrackingType _trackingType = TrackingType.reps;
 
   @override
   void dispose() {
@@ -99,6 +112,7 @@ class _AddExerciseDialogState extends State<_AddExerciseDialog> {
     Navigator.of(context).pop((
       name: _nameController.text.trim(),
       category: _category,
+      trackingType: _trackingType,
       note: note.isEmpty ? null : note,
     ));
   }
@@ -128,6 +142,16 @@ class _AddExerciseDialogState extends State<_AddExerciseDialog> {
               onChanged: (v) =>
                   setState(() => _category = v ?? ExerciseCategory.cardio),
             ),
+            DropdownButtonFormField<TrackingType>(
+              initialValue: _trackingType,
+              decoration: const InputDecoration(labelText: '记录方式'),
+              items: [
+                for (final type in TrackingType.values)
+                  DropdownMenuItem(value: type, child: Text(type.label)),
+              ],
+              onChanged: (value) =>
+                  setState(() => _trackingType = value ?? TrackingType.reps),
+            ),
             TextFormField(
               controller: _noteController,
               decoration: const InputDecoration(labelText: '备注（可选）'),
@@ -148,8 +172,10 @@ class _AddExerciseDialogState extends State<_AddExerciseDialog> {
 
 /// 弹出「添加组」对话框；次数 / 持续秒数 / 重量 / 备注均可选。
 /// [prefill] 非空时预填上一组的次数 / 时长 / 重量（不预填备注）
-Future<SetDraft?> showAddWorkoutSetDialog(BuildContext context,
-    {WorkoutSet? prefill}) {
+Future<SetDraft?> showAddWorkoutSetDialog(
+  BuildContext context, {
+  WorkoutSet? prefill,
+}) {
   return showDialog<SetDraft>(
     context: context,
     builder: (_) => _AddSetDialog(prefill: prefill),
@@ -157,7 +183,10 @@ Future<SetDraft?> showAddWorkoutSetDialog(BuildContext context,
 }
 
 /// 弹出「编辑组」对话框：预填该组现有全部值（含备注），返回修改后的草稿
-Future<SetDraft?> showEditWorkoutSetDialog(BuildContext context, WorkoutSet set) {
+Future<SetDraft?> showEditWorkoutSetDialog(
+  BuildContext context,
+  WorkoutSet set,
+) {
   return showDialog<SetDraft>(
     context: context,
     builder: (_) => _AddSetDialog(prefill: set, editing: true),
@@ -179,8 +208,11 @@ class _AddSetDialog extends StatefulWidget {
 class _AddSetDialogState extends State<_AddSetDialog> {
   late final TextEditingController _repsController;
   late final TextEditingController _durationController;
+  late final TextEditingController _distanceController;
   late final TextEditingController _weightController;
   late final TextEditingController _noteController;
+  late SetRole _setRole;
+  late SetStatus _setStatus;
 
   @override
   void initState() {
@@ -188,17 +220,25 @@ class _AddSetDialogState extends State<_AddSetDialog> {
     final p = widget.prefill;
     String numText(num? v) => v == null ? '' : '$v';
     _repsController = TextEditingController(text: numText(p?.reps));
-    _durationController =
-        TextEditingController(text: numText(p?.durationSeconds));
+    _durationController = TextEditingController(
+      text: numText(p?.durationSeconds),
+    );
+    _distanceController = TextEditingController(
+      text: numText(p?.distanceMeters),
+    );
     _weightController = TextEditingController(text: numText(p?.weightKg));
-    _noteController =
-        TextEditingController(text: widget.editing ? (p?.note ?? '') : '');
+    _setRole = p?.setRole ?? SetRole.work;
+    _setStatus = p?.setStatus ?? SetStatus.completed;
+    _noteController = TextEditingController(
+      text: widget.editing ? (p?.note ?? '') : '',
+    );
   }
 
   @override
   void dispose() {
     _repsController.dispose();
     _durationController.dispose();
+    _distanceController.dispose();
     _weightController.dispose();
     _noteController.dispose();
     super.dispose();
@@ -212,19 +252,25 @@ class _AddSetDialogState extends State<_AddSetDialog> {
   void _submit() {
     final reps = _parseInt(_repsController);
     final durationSeconds = _parseInt(_durationController);
-    // 有效组：次数或持续秒数至少一项大于 0，全空（或只有重量/备注）不允许保存
-    if ((reps == null || reps <= 0) &&
-        (durationSeconds == null || durationSeconds <= 0)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('次数或持续秒数至少填一项（需大于 0）')),
-      );
+    final distanceMeters = double.tryParse(_distanceController.text.trim());
+    // 完成组至少需要一项核心事实；跳过组允许不填写数值。
+    if (_setStatus == SetStatus.completed &&
+        (reps == null || reps <= 0) &&
+        (durationSeconds == null || durationSeconds <= 0) &&
+        (distanceMeters == null || distanceMeters <= 0)) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('次数、持续秒数或距离至少填一项（需大于 0）')));
       return;
     }
     final note = _noteController.text.trim();
     Navigator.of(context).pop((
       reps: reps,
       durationSeconds: durationSeconds,
+      distanceMeters: distanceMeters,
       weightKg: double.tryParse(_weightController.text.trim()),
+      setRole: _setRole,
+      setStatus: _setStatus,
       note: note.isEmpty ? null : note,
     ));
   }
@@ -237,6 +283,49 @@ class _AddSetDialogState extends State<_AddSetDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            Row(
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<SetRole>(
+                    initialValue: _setRole,
+                    decoration: const InputDecoration(labelText: '组角色'),
+                    items: const [
+                      DropdownMenuItem(
+                        value: SetRole.warmup,
+                        child: Text('热身组'),
+                      ),
+                      DropdownMenuItem(value: SetRole.work, child: Text('工作组')),
+                      DropdownMenuItem(
+                        value: SetRole.cooldown,
+                        child: Text('放松组'),
+                      ),
+                    ],
+                    onChanged: (value) =>
+                        setState(() => _setRole = value ?? SetRole.work),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: DropdownButtonFormField<SetStatus>(
+                    initialValue: _setStatus,
+                    decoration: const InputDecoration(labelText: '状态'),
+                    items: const [
+                      DropdownMenuItem(
+                        value: SetStatus.completed,
+                        child: Text('已完成'),
+                      ),
+                      DropdownMenuItem(
+                        value: SetStatus.skipped,
+                        child: Text('跳过'),
+                      ),
+                    ],
+                    onChanged: (value) => setState(
+                      () => _setStatus = value ?? SetStatus.completed,
+                    ),
+                  ),
+                ),
+              ],
+            ),
             TextField(
               controller: _repsController,
               decoration: const InputDecoration(labelText: '次数（可选）'),
@@ -245,16 +334,23 @@ class _AddSetDialogState extends State<_AddSetDialog> {
             ),
             TextField(
               controller: _durationController,
-              decoration:
-                  const InputDecoration(labelText: '持续秒数（可选）'),
+              decoration: const InputDecoration(labelText: '持续秒数（可选）'),
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             ),
             TextField(
+              controller: _distanceController,
+              decoration: const InputDecoration(labelText: '距离（米，可选）'),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+            ),
+            TextField(
               controller: _weightController,
               decoration: const InputDecoration(labelText: '重量 kg（可选）'),
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
             ),
             TextField(
               controller: _noteController,

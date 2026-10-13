@@ -10,19 +10,15 @@ import 'workout_dialogs.dart';
 /// 关联方案的实时进度卡：按方案快照对当前已记录内容实时评估；
 /// 达到最低时整卡变为成功态，并弹出一次「最低方案已完成」反馈
 /// （是否已反馈由外层经 minDoneNotified / onMinDone 维护，避免重复弹 SnackBar）
-class PlanProgressCard extends StatelessWidget {
+class PlanProgressCard extends ConsumerWidget {
   const PlanProgressCard({
     super.key,
     required this.workout,
-    required this.exercises,
-    required this.sets,
     required this.minDoneNotified,
     required this.onMinDone,
   });
 
   final Workout workout;
-  final List<WorkoutExercise> exercises;
-  final List<WorkoutSet> sets;
 
   /// 本次进入页面后是否已反馈过「最低方案完成」
   final bool minDoneNotified;
@@ -31,47 +27,44 @@ class PlanProgressCard extends StatelessWidget {
   final VoidCallback onMinDone;
 
   @override
-  Widget build(BuildContext context) {
-    final ev = AppDatabase.evaluateWorkout(workout, exercises, sets);
-    final isDuration = workout.planMetric == PlanMetric.duration;
-    final min = workout.planMin ?? 0;
-    final regular = workout.planRegular ?? 0;
-    String fmt(int v) => isDuration ? '${v ~/ 60} 分钟' : '$v 组';
+  Widget build(BuildContext context, WidgetRef ref) {
+    final progressAsync = ref.watch(
+      workoutTemplateProgressProvider(workout.id),
+    );
+    final progress = progressAsync.value;
     final minDone =
-        ev.tier == PlanTier.min || ev.tier == PlanTier.regular;
-    final regularDone = ev.tier == PlanTier.regular;
+        progress?.tier == PlanTier.min || progress?.tier == PlanTier.regular;
+    final regularDone = progress?.tier == PlanTier.regular;
 
     if (minDone && !minDoneNotified) {
       onMinDone();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('今天的最低方案已完成')),
-          );
+          ScaffoldMessenger.of(context)
+              .showSnackBar(const SnackBar(content: Text('今天的最低方案已完成')));
         }
       });
     }
 
     final scheme = Theme.of(context).colorScheme;
-    Widget statusLine(String label, int target, bool done) {
-      // 进度按指标单位显示：时长换算为分钟，组数直接显示
-      final progress = isDuration
-          ? '${ev.actual ~/ 60} / ${target ~/ 60} 分钟'
-          : '${ev.actual} / $target 组';
+    Widget statusLine(String label, int completed, int total, bool done) {
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('$label ${fmt(target)}'),
+          Text('$label计划组'),
           const SizedBox(width: 8),
           if (done)
-            Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.check, size: 16, color: scheme.primary),
-              const SizedBox(width: 2),
-              const Text('已完成'),
-            ])
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.check, size: 16, color: scheme.primary),
+                const SizedBox(width: 2),
+                const Text('已完成'),
+              ],
+            )
           else
             Text(
-              progress,
+              '$completed / $total 组',
               style: TextStyle(color: scheme.onSurfaceVariant),
             ),
         ],
@@ -85,11 +78,32 @@ class PlanProgressCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('关联方案：${workout.planName ?? ''}',
-                style: Theme.of(context).textTheme.titleSmall),
+            Text(
+              '关联方案：${workout.templateNameSnapshot ?? ''}',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
             const SizedBox(height: 4),
-            statusLine('最低', min, minDone),
-            statusLine('常规', regular, regularDone),
+            if (progressAsync.hasError)
+              const Text('进度加载失败')
+            else if (progress == null)
+              const Text('进度加载中…')
+            else ...[
+              if (progress.minimumTotal == 0)
+                Text('最低量未设置', style: TextStyle(color: scheme.onSurfaceVariant))
+              else
+                statusLine(
+                  '最低',
+                  progress.minimumCompleted,
+                  progress.minimumTotal,
+                  minDone,
+                ),
+              statusLine(
+                '常规',
+                progress.regularCompleted,
+                progress.regularTotal,
+                regularDone,
+              ),
+            ],
           ],
         ),
       ),
@@ -105,6 +119,7 @@ class ExerciseCard extends ConsumerWidget {
     super.key,
     required this.exercise,
     required this.sets,
+    required this.hasTemplate,
     required this.timingExerciseId,
     required this.stopwatch,
     required this.onStartTiming,
@@ -116,6 +131,7 @@ class ExerciseCard extends ConsumerWidget {
 
   /// 本次训练的全部组（卡内按 exerciseId 过滤）
   final List<WorkoutSet> sets;
+  final bool hasTemplate;
 
   /// 正在计时的动作 id（全场至多一个）；null 表示无组在计时
   final int? timingExerciseId;
@@ -135,10 +151,15 @@ class ExerciseCard extends ConsumerWidget {
       prefill: exerciseSets.isEmpty ? null : exerciseSets.last,
     );
     if (draft == null) return;
-    await ref.read(databaseProvider).addWorkoutSet(
+    await ref
+        .read(databaseProvider)
+        .addWorkoutSet(
           exercise.id,
+          setRole: draft.setRole,
+          setStatus: draft.setStatus,
           reps: draft.reps,
           durationSeconds: draft.durationSeconds,
+          distanceMeters: draft.distanceMeters,
           weightKg: draft.weightKg,
           note: draft.note,
         );
@@ -146,10 +167,14 @@ class ExerciseCard extends ConsumerWidget {
 
   /// 再来一组：直接复制上一组的次数 / 时长 / 重量保存（不带备注）
   Future<void> _repeatLastSet(WidgetRef ref, WorkoutSet last) async {
-    await ref.read(databaseProvider).addWorkoutSet(
+    await ref
+        .read(databaseProvider)
+        .addWorkoutSet(
           exercise.id,
+          setRole: last.setRole,
           reps: last.reps,
           durationSeconds: last.durationSeconds,
+          distanceMeters: last.distanceMeters,
           weightKg: last.weightKg,
         );
   }
@@ -159,10 +184,15 @@ class ExerciseCard extends ConsumerWidget {
   Future<void> _editSet(WidgetRef ref, WorkoutSet set) async {
     final draft = await showEditWorkoutSetDialog(ref.context, set);
     if (draft == null) return;
-    await ref.read(databaseProvider).updateWorkoutSet(
+    await ref
+        .read(databaseProvider)
+        .updateWorkoutSet(
           set.id,
+          setRole: Value(draft.setRole),
+          setStatus: Value(draft.setStatus),
           reps: Value(draft.reps),
           durationSeconds: Value(draft.durationSeconds),
+          distanceMeters: Value(draft.distanceMeters),
           weightKg: Value(draft.weightKg),
           note: Value(draft.note),
         );
@@ -170,7 +200,10 @@ class ExerciseCard extends ConsumerWidget {
 
   /// 滑动删除一组，SnackBar 提供撤销；撤销会追加到末尾，不恢复原顺序
   Future<void> _deleteSetWithUndo(
-      BuildContext context, WidgetRef ref, WorkoutSet set) async {
+    BuildContext context,
+    WidgetRef ref,
+    WorkoutSet set,
+  ) async {
     final db = ref.read(databaseProvider);
     await db.deleteWorkoutSet(set.id);
     if (!context.mounted) return;
@@ -181,8 +214,12 @@ class ExerciseCard extends ConsumerWidget {
           label: '撤销',
           onPressed: () => db.addWorkoutSet(
             set.exerciseId,
+            templateSetId: set.templateSetId,
+            setRole: set.setRole,
+            setStatus: set.setStatus,
             reps: set.reps,
             durationSeconds: set.durationSeconds,
+            distanceMeters: set.distanceMeters,
             weightKg: set.weightKg,
             note: set.note,
           ),
@@ -197,8 +234,7 @@ class ExerciseCard extends ConsumerWidget {
       context: ref.context,
       builder: (context) => AlertDialog(
         title: const Text('删除动作'),
-        content: Text(
-            '将删除「${exercise.name}」及其已记录的 $setCount 组，确定删除吗？'),
+        content: Text('将删除「${exercise.name}」及其已记录的 $setCount 组，确定删除吗？'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -220,8 +256,17 @@ class ExerciseCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final isTimingThis = timingExerciseId == exercise.id;
     final isTimingOther = timingExerciseId != null && !isTimingThis;
-    final exerciseSets =
-        sets.where((s) => s.exerciseId == exercise.id).toList();
+    final exerciseSets = sets
+        .where((s) => s.exerciseId == exercise.id)
+        .toList();
+    final templateExerciseId = exercise.templateExerciseId;
+    final plannedSets = templateExerciseId == null
+        ? const <TemplateSet>[]
+        : ref.watch(templateSetsProvider(templateExerciseId)).value ??
+              const <TemplateSet>[];
+    final linkedPlannedCount = exerciseSets
+        .where((set) => set.templateSetId != null)
+        .length;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -243,14 +288,9 @@ class ExerciseCard extends ConsumerWidget {
                       const SizedBox(width: 6),
                       Text(
                         exercise.category.label,
-                        style: Theme.of(context)
-                            .textTheme
-                            .labelSmall
-                            ?.copyWith(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
-                            ),
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     ],
                   ),
@@ -272,10 +312,31 @@ class ExerciseCard extends ConsumerWidget {
               Text(
                 _summarizeSets(exerciseSets),
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
+            Text(
+              templateExerciseId != null
+                  ? '计划动作 · 已记录 $linkedPlannedCount/${plannedSets.length} 个计划组'
+                  : hasTemplate
+                  ? '计划外动作'
+                  : '自由动作',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
             for (var i = 0; i < exerciseSets.length; i++)
-              _setRow(context, ref, exerciseSets[i], i),
+              _setRow(context, ref, exerciseSets[i], i, plannedSets),
+            if (plannedSets.length > linkedPlannedCount)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Text(
+                  '尚有 ${plannedSets.length - linkedPlannedCount} 个计划组未记录',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
             // 计时的组变成高亮条，计时期间隐藏「添加组」避免一行挤四个控件
             if (isTimingThis)
               _timingBar(context, exerciseSets.length + 1)
@@ -314,7 +375,26 @@ class ExerciseCard extends ConsumerWidget {
 
   /// 单组行：带序号，点按编辑，左滑删除并在 SnackBar 中提供撤销
   Widget _setRow(
-      BuildContext context, WidgetRef ref, WorkoutSet set, int index) {
+    BuildContext context,
+    WidgetRef ref,
+    WorkoutSet set,
+    int index,
+    List<TemplateSet> plannedSets,
+  ) {
+    final planned = set.templateSetId == null
+        ? null
+        : plannedSets
+              .where((candidate) => candidate.id == set.templateSetId)
+              .firstOrNull;
+    final relation = planned == null
+        ? exercise.templateExerciseId == null
+              ? '自由组'
+              : '额外组'
+        : set.setStatus == SetStatus.skipped
+        ? '计划组 · 已跳过'
+        : _meetsPlannedTarget(set, planned)
+        ? '计划组 · 已完成'
+        : '计划组 · 未达目标';
     return Dismissible(
       key: ValueKey('set-${set.id}'),
       direction: DismissDirection.endToStart,
@@ -322,20 +402,32 @@ class ExerciseCard extends ConsumerWidget {
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 12),
         color: Theme.of(context).colorScheme.errorContainer,
-        child: Icon(Icons.delete_outline,
-            color: Theme.of(context).colorScheme.onErrorContainer),
+        child: Icon(
+          Icons.delete_outline,
+          color: Theme.of(context).colorScheme.onErrorContainer,
+        ),
       ),
       onDismissed: (_) => _deleteSetWithUndo(context, ref, set),
       child: ListTile(
         dense: true,
         contentPadding: EdgeInsets.zero,
-        title: Text('第 ${index + 1} 组　${describeSet(set)}'),
-        trailing: Icon(Icons.edit_outlined,
-            size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
+        title: Text('第 ${index + 1} 组　$relation　${describeSet(set)}'),
+        trailing: Icon(
+          Icons.edit_outlined,
+          size: 16,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
         onTap: () => _editSet(ref, set),
       ),
     );
   }
+
+  static bool _meetsPlannedTarget(WorkoutSet actual, TemplateSet planned) =>
+      (planned.reps != null && (actual.reps ?? 0) >= planned.reps!) ||
+      (planned.durationSeconds != null &&
+          (actual.durationSeconds ?? 0) >= planned.durationSeconds!) ||
+      (planned.distanceMeters != null &&
+          (actual.distanceMeters ?? 0) >= planned.distanceMeters!);
 
   /// 组级秒表计时中的高亮条：组序号 + 大读数（等宽数字）+ 暂停本组 / 完成本组
   Widget _timingBar(BuildContext context, int setIndex) {
@@ -350,14 +442,14 @@ class ExerciseCard extends ConsumerWidget {
       ),
       child: Row(
         children: [
-          Text('第 $setIndex 组',
-              style: Theme.of(context).textTheme.titleSmall),
+          Text('第 $setIndex 组', style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(width: 12),
           Text(
             formatElapsed(stopwatch.elapsedSeconds()),
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: scheme.onSecondaryContainer,
-                fontFeatures: const [FontFeature.tabularFigures()]),
+              color: scheme.onSecondaryContainer,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
           ),
           const Spacer(),
           TextButton(
@@ -376,15 +468,24 @@ class ExerciseCard extends ConsumerWidget {
   /// 动作卡汇总：「N 组 · 共 X 次 · 共 Y 秒/分钟」（只显示出现过的指标）
   static String _summarizeSets(List<WorkoutSet> sets) {
     final reps = sets.fold<int>(0, (sum, s) => sum + (s.reps ?? 0));
-    final seconds =
-        sets.fold<int>(0, (sum, s) => sum + (s.durationSeconds ?? 0));
+    final seconds = sets.fold<int>(
+      0,
+      (sum, s) => sum + (s.durationSeconds ?? 0),
+    );
+    final distance = sets.fold<double>(
+      0,
+      (sum, s) => sum + (s.distanceMeters ?? 0),
+    );
     final parts = <String>['${sets.length} 组'];
     if (reps > 0) parts.add('共 $reps 次');
     if (seconds > 0) {
-      parts.add(seconds >= 60
-          ? '共 ${(seconds / 60).toStringAsFixed(seconds % 60 == 0 ? 0 : 1)} 分钟'
-          : '共 $seconds 秒');
+      parts.add(
+        seconds >= 60
+            ? '共 ${(seconds / 60).toStringAsFixed(seconds % 60 == 0 ? 0 : 1)} 分钟'
+            : '共 $seconds 秒',
+      );
     }
+    if (distance > 0) parts.add('共 $distance 米');
     return parts.join(' · ');
   }
 }

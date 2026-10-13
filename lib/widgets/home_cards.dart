@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../database/database.dart';
+import '../domain/rules/rule_evaluator.dart';
 import '../providers/app_providers.dart';
 import '../screens/plans_screen.dart';
+import '../screens/rules_screen.dart';
 import 'add_entry_dialogs.dart';
 import 'week_strip.dart';
 
@@ -14,7 +16,10 @@ class TodayPlanCard extends ConsumerWidget {
 
   /// 标记休息：可选备注；返回 null 表示取消
   Future<void> _markRest(
-      BuildContext context, WidgetRef ref, DateTime date) async {
+    BuildContext context,
+    WidgetRef ref,
+    DateTime date,
+  ) async {
     final noteController = TextEditingController();
     final note = await showDialog<String?>(
       context: context,
@@ -43,63 +48,11 @@ class TodayPlanCard extends ConsumerWidget {
         .setRestMark(date, note: note.isEmpty ? null : note);
   }
 
-  /// 单个方案的今日状态行：未开始 / 未达最低 / 最低完成 / 常规完成
-  Widget _planRow(BuildContext context, ExercisePlan p, PlanEvaluation? ev) {
-    final scheme = Theme.of(context).colorScheme;
-    final isDuration = p.metric == PlanMetric.duration;
-    String fmt(int v) => isDuration ? '${v ~/ 60} 分钟' : '$v 组';
-    final Widget status;
-    switch (ev?.tier) {
-      case null:
-        status = Text('未开始',
-            style: TextStyle(color: scheme.onSurfaceVariant));
-      case PlanTier.belowMin:
-        status = Text(
-          '未达最低（${fmt(ev!.actual)}/${fmt(p.minThreshold)}）',
-          style: TextStyle(color: scheme.onSurfaceVariant),
-        );
-      case PlanTier.min:
-        status = Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.check, size: 16, color: scheme.primary),
-          const SizedBox(width: 4),
-          const Text('最低完成'),
-        ]);
-      case PlanTier.regular:
-        status = Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.check_circle, size: 16, color: scheme.primary),
-          const SizedBox(width: 4),
-          const Text('常规完成'),
-        ]);
-      case PlanTier.none:
-        status = const SizedBox.shrink();
-    }
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(p.name, style: Theme.of(context).textTheme.titleSmall),
-                Text(
-                  '${p.exerciseName} · ${describePlanThresholds(p)}',
-                  style: Theme.of(context).textTheme.labelSmall,
-                ),
-              ],
-            ),
-          ),
-          status,
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final date = ref.watch(selectedDateProvider);
-    final plansAsync = ref.watch(exercisePlansProvider);
-    final evalsAsync = ref.watch(dailyPlanEvaluationsProvider);
+    final templatesAsync = ref.watch(workoutTemplatesProvider);
+    final progressAsync = ref.watch(dailyTemplateProgressProvider);
     final rest = ref.watch(restMarkProvider).value;
 
     return Card(
@@ -121,17 +74,17 @@ class TodayPlanCard extends ConsumerWidget {
               ],
             ),
             // 加载 / 错误 / 空 / 数据 分开呈现
-            if (plansAsync.hasError || evalsAsync.hasError)
+            if (templatesAsync.hasError || progressAsync.hasError)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 12),
                 child: Text('方案状态加载失败'),
               )
-            else if (!plansAsync.hasValue)
+            else if (!templatesAsync.hasValue)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 12),
                 child: Text('加载中…'),
               )
-            else if (plansAsync.value!.isEmpty)
+            else if (templatesAsync.value!.isEmpty)
               Row(
                 children: [
                   const Expanded(child: Text('尚未设置最低方案')),
@@ -144,8 +97,11 @@ class TodayPlanCard extends ConsumerWidget {
                 ],
               )
             else
-              for (final p in plansAsync.value!)
-                _planRow(context, p, evalsAsync.value?[p.id]),
+              for (final summary in templatesAsync.value!)
+                _TemplateProgressRow(
+                  summary: summary,
+                  progress: progressAsync.value?[summary.template.id],
+                ),
             if (rest != null)
               Row(
                 children: [
@@ -166,6 +122,173 @@ class TodayPlanCard extends ConsumerWidget {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _TemplateProgressRow extends ConsumerWidget {
+  const _TemplateProgressRow({required this.summary, required this.progress});
+
+  final WorkoutTemplateSummary summary;
+  final TemplateProgress? progress;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final definition = ref
+        .watch(templateDefinitionProvider(summary.template.id))
+        .value;
+    final subtitle = definition == null
+        ? '加载模板详情…'
+        : definition.exercises.length == 1
+        ? '${definition.exercises.single.exerciseNameSnapshot} · ${describeTemplateThresholds(definition)}'
+        : '${definition.exercises.length} 个动作 · ${definition.sets.length} 个计划组';
+    final status = switch (progress?.tier) {
+      null => Text('未开始', style: TextStyle(color: scheme.onSurfaceVariant)),
+      PlanTier.belowMin => Text(
+        '已记录 ${progress!.regularCompleted}/${progress!.regularTotal} 组',
+        style: TextStyle(color: scheme.onSurfaceVariant),
+      ),
+      PlanTier.min => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.check, size: 16, color: scheme.primary),
+          const SizedBox(width: 4),
+          const Text('最低完成'),
+        ],
+      ),
+      PlanTier.regular => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.check_circle, size: 16, color: scheme.primary),
+          const SizedBox(width: 4),
+          const Text('常规完成'),
+        ],
+      ),
+      PlanTier.none => const SizedBox.shrink(),
+    };
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  summary.version.name,
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                Text(subtitle, style: Theme.of(context).textTheme.labelSmall),
+              ],
+            ),
+          ),
+          status,
+        ],
+      ),
+    );
+  }
+}
+
+/// 日／周 RuleSet 进度；与上方单次训练模板完成度保持独立。
+class RuleGoalsCard extends ConsumerWidget {
+  const RuleGoalsCard({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final progressAsync = ref.watch(ruleSetProgressProvider);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text('周期目标', style: Theme.of(context).textTheme.titleMedium),
+                const Spacer(),
+                IconButton(
+                  tooltip: '管理周期目标',
+                  icon: const Icon(Icons.tune, size: 20),
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const RulesScreen()),
+                  ),
+                ),
+              ],
+            ),
+            progressAsync.when(
+              loading: () => const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text('加载中…'),
+              ),
+              error: (_, _) => const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text('周期目标加载失败'),
+              ),
+              data: (items) => items.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: Text('当前日期没有生效的周期目标'),
+                    )
+                  : Column(
+                      children: [
+                        for (final item in items)
+                          _ruleProgressRow(context, item),
+                      ],
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _ruleProgressRow(BuildContext context, RuleSetProgress item) {
+    final scheme = Theme.of(context).colorScheme;
+    final evaluation = item.evaluation;
+    final (icon, label, color) = switch (evaluation.status) {
+      RuleResultStatus.passed => (Icons.check_circle, '已达成', scheme.primary),
+      RuleResultStatus.partial => (Icons.timelapse, '进行中', scheme.secondary),
+      RuleResultStatus.failed => (
+        Icons.radio_button_unchecked,
+        '未开始',
+        scheme.onSurfaceVariant,
+      ),
+      RuleResultStatus.insufficientData => (
+        Icons.help_outline,
+        '数据不足',
+        scheme.error,
+      ),
+    };
+    final details = evaluation.children
+        .map(
+          (child) => child.actual == null
+              ? '数据不足'
+              : '${child.actual}/${child.target} ${child.unit ?? ''}'.trim(),
+        )
+        .join(' · ');
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.ruleSet.name,
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                if (details.isNotEmpty)
+                  Text(details, style: Theme.of(context).textTheme.labelSmall),
+              ],
+            ),
+          ),
+          Text(label, style: TextStyle(color: color)),
+        ],
       ),
     );
   }
@@ -222,10 +345,7 @@ class FoodSection extends ConsumerWidget {
   ) {
     final total = entries.fold<int>(0, (sum, e) => sum + e.calories);
     return [
-      Text(
-        '当日摄入 $total kcal',
-        style: Theme.of(context).textTheme.labelSmall,
-      ),
+      Text('当日摄入 $total kcal', style: Theme.of(context).textTheme.labelSmall),
       if (entries.isEmpty)
         const Padding(
           padding: EdgeInsets.symmetric(vertical: 12),
@@ -243,8 +363,7 @@ class FoodSection extends ConsumerWidget {
     List<FoodEntry> entries,
     MealType mealType,
   ) {
-    final group =
-        entries.where((e) => e.mealType == mealType).toList();
+    final group = entries.where((e) => e.mealType == mealType).toList();
     if (group.isEmpty) return const [];
     return [
       const Divider(),
@@ -258,8 +377,7 @@ class FoodSection extends ConsumerWidget {
           trailing: IconButton(
             icon: const Icon(Icons.delete_outline),
             tooltip: '删除',
-            onPressed: () =>
-                ref.read(databaseProvider).deleteFoodEntry(e.id),
+            onPressed: () => ref.read(databaseProvider).deleteFoodEntry(e.id),
           ),
         ),
     ];
@@ -282,7 +400,9 @@ class WeeklyExerciseCard extends ConsumerWidget {
     final weekEnd = weekStart.add(const Duration(days: 6));
     final weekWorkouts = weekAsync.value ?? [];
     final totalSeconds = weekWorkouts.fold<int>(
-        0, (sum, w) => sum + (w.totalSeconds ?? 0));
+      0,
+      (sum, w) => sum + (w.totalSeconds ?? 0),
+    );
     final totalMinutes = totalSeconds ~/ 60;
 
     return Card(
@@ -353,19 +473,21 @@ class WeeklyExerciseCard extends ConsumerWidget {
   }
 
   static Widget _legendItem(
-          BuildContext context, DailyStatus status, String label) =>
-      Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            width: 14,
-            height: 14,
-            child: Center(child: StatusDot(status: status)),
-          ),
-          const SizedBox(width: 4),
-          Text(label, style: Theme.of(context).textTheme.labelSmall),
-        ],
-      );
+    BuildContext context,
+    DailyStatus status,
+    String label,
+  ) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      SizedBox(
+        width: 14,
+        height: 14,
+        child: Center(child: StatusDot(status: status)),
+      ),
+      const SizedBox(width: 4),
+      Text(label, style: Theme.of(context).textTheme.labelSmall),
+    ],
+  );
 }
 
 /// 单项目标进度条（自动封顶到 100%）
@@ -385,8 +507,9 @@ class GoalProgress extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final value =
-        target <= 0 ? 0.0 : (current / target).clamp(0.0, 1.0).toDouble();
+    final value = target <= 0
+        ? 0.0
+        : (current / target).clamp(0.0, 1.0).toDouble();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

@@ -49,10 +49,13 @@ class _WorkoutScreenState extends ConsumerState<WorkoutScreen> {
   Future<void> _addExercise(Workout workout) async {
     final draft = await showAddWorkoutExerciseDialog(context);
     if (draft == null) return;
-    await ref.read(databaseProvider).addWorkoutExercise(
+    await ref
+        .read(databaseProvider)
+        .addWorkoutExercise(
           workout.id,
           name: draft.name,
           category: draft.category,
+          trackingType: draft.trackingType,
           note: draft.note,
         );
   }
@@ -87,9 +90,8 @@ class _WorkoutScreenState extends ConsumerState<WorkoutScreen> {
       _timingExerciseId = null;
     });
     if (seconds <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('计时不足 1 秒，未保存该组')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('计时不足 1 秒，未保存该组')));
       return;
     }
     await ref
@@ -154,8 +156,7 @@ class _WorkoutScreenState extends ConsumerState<WorkoutScreen> {
       context: context,
       builder: (_) => FinishWorkoutDialog(
         elapsedSeconds: elapsed,
-        creditExerciseName:
-            singleEmptyExercise ? exercises.single.name : null,
+        creditExerciseName: singleEmptyExercise ? exercises.single.name : null,
       ),
     );
     if (result == null) return;
@@ -167,22 +168,17 @@ class _WorkoutScreenState extends ConsumerState<WorkoutScreen> {
       );
       // 关联了方案时按保存后的实际记录给出达标反馈
       final done = await db.getWorkout(workout.id);
-      if (done != null && done.planMetric != null) {
-        final ev = AppDatabase.evaluateWorkout(
-          done,
-          await db.getWorkoutExercises(done.id),
-          await db.getWorkoutSets(done.id),
-        );
+      if (done?.templateVersionId != null) {
+        final progress = await db.evaluateWorkoutTemplate(done!.id);
         messenger.showSnackBar(
-          SnackBar(content: Text(describePlanEvaluation(ev, done))),
+          SnackBar(content: Text(describeTemplateProgress(progress, done))),
         );
       }
     } on StateError {
       // 单一空动作但未勾选「计时记为时长」时仍无有效组
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('至少需要一条有效组（次数或持续时间大于 0）才能结束训练')),
+          const SnackBar(content: Text('至少需要一条有效组（次数或持续时间大于 0）才能结束训练')),
         );
       }
     }
@@ -239,7 +235,8 @@ class _WorkoutScreenState extends ConsumerState<WorkoutScreen> {
             Text(
               '总用时 ${formatElapsed(elapsed)}${paused ? ' · 已暂停' : ''}',
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontFeatures: const [FontFeature.tabularFigures()]),
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
             ),
             const Spacer(),
             TextButton.icon(
@@ -254,12 +251,10 @@ class _WorkoutScreenState extends ConsumerState<WorkoutScreen> {
             ),
           ],
         ),
-        if (workout.planMetric != null) ...[
+        if (workout.templateVersionId != null) ...[
           const SizedBox(height: 12),
           PlanProgressCard(
             workout: workout,
-            exercises: exercises,
-            sets: sets,
             minDoneNotified: _minDoneNotified,
             onMinDone: () => _minDoneNotified = true,
           ),
@@ -271,6 +266,7 @@ class _WorkoutScreenState extends ConsumerState<WorkoutScreen> {
             child: ExerciseCard(
               exercise: exercise,
               sets: sets,
+              hasTemplate: workout.templateVersionId != null,
               timingExerciseId: _timingExerciseId,
               stopwatch: _stopwatch,
               onStartTiming: _startSetTiming,

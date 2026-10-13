@@ -12,11 +12,11 @@ import '../widgets/workout_dialogs.dart';
 /// 编辑模式：动作与组实时写库，总用时与感受点保存时更新。
 class LogWorkoutScreen extends ConsumerStatefulWidget {
   const LogWorkoutScreen({super.key, required this.initialDate})
-      : editing = null;
+    : editing = null;
 
   const LogWorkoutScreen.editing({super.key, required Workout workout})
-      : editing = workout,
-        initialDate = null;
+    : editing = workout,
+      initialDate = null;
 
   /// 补记模式的初始日期（通常为首页选中日期）
   final DateTime? initialDate;
@@ -30,22 +30,43 @@ class LogWorkoutScreen extends ConsumerStatefulWidget {
 
 /// 补记模式本地暂存的组
 class _DraftSet {
-  _DraftSet({this.reps, this.durationSeconds, this.weightKg, this.note});
+  _DraftSet({
+    this.reps,
+    this.durationSeconds,
+    this.distanceMeters,
+    this.weightKg,
+    this.setRole = SetRole.work,
+    this.setStatus = SetStatus.completed,
+    this.note,
+  });
 
   int? reps;
   int? durationSeconds;
+  double? distanceMeters;
   double? weightKg;
+  SetRole setRole;
+  SetStatus setStatus;
   String? note;
 
-  bool get isValid => (reps ?? 0) > 0 || (durationSeconds ?? 0) > 0;
+  bool get isValid =>
+      setStatus == SetStatus.completed &&
+      ((reps ?? 0) > 0 ||
+          (durationSeconds ?? 0) > 0 ||
+          (distanceMeters ?? 0) > 0);
 }
 
 /// 补记模式本地暂存的动作
 class _DraftExercise {
-  _DraftExercise({required this.name, required this.category, this.note});
+  _DraftExercise({
+    required this.name,
+    required this.category,
+    required this.trackingType,
+    this.note,
+  });
 
   String name;
   ExerciseCategory category;
+  TrackingType trackingType;
   String? note;
   final List<_DraftSet> sets = [];
 }
@@ -56,8 +77,8 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
   final List<_DraftExercise> _drafts = [];
   late DateTime _date;
 
-  /// 关联的方案 id；null 表示不关联
-  int? _selectedPlanId;
+  /// 关联的模板版本 id；null 表示不关联
+  int? _selectedTemplateVersionId;
   bool _saving = false;
 
   bool get _isEditing => widget.editing != null;
@@ -67,7 +88,7 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
     super.initState();
     final editing = widget.editing;
     _date = AppDatabase.dateOnly(editing?.date ?? widget.initialDate!);
-    _selectedPlanId = editing?.planId;
+    _selectedTemplateVersionId = editing?.templateVersionId;
     final total = editing?.totalSeconds;
     if (total != null) {
       // 预填分钟，保留一位小数以尽量不损失精度
@@ -113,11 +134,20 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
         widget.editing!.id,
         name: draft.name,
         category: draft.category,
+        trackingType: draft.trackingType,
         note: draft.note,
       );
     } else {
-      setState(() => _drafts.add(
-          _DraftExercise(name: draft.name, category: draft.category, note: draft.note)));
+      setState(
+        () => _drafts.add(
+          _DraftExercise(
+            name: draft.name,
+            category: draft.category,
+            trackingType: draft.trackingType,
+            note: draft.note,
+          ),
+        ),
+      );
     }
   }
 
@@ -125,20 +155,32 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
     final draft = await showAddWorkoutSetDialog(context);
     if (draft == null) return;
     if (live != null) {
-      await ref.read(databaseProvider).addWorkoutSet(
+      await ref
+          .read(databaseProvider)
+          .addWorkoutSet(
             live.id,
+            setRole: draft.setRole,
+            setStatus: draft.setStatus,
             reps: draft.reps,
             durationSeconds: draft.durationSeconds,
+            distanceMeters: draft.distanceMeters,
             weightKg: draft.weightKg,
             note: draft.note,
           );
     } else {
-      setState(() => _drafts[index].sets.add(_DraftSet(
+      setState(
+        () => _drafts[index].sets.add(
+          _DraftSet(
             reps: draft.reps,
             durationSeconds: draft.durationSeconds,
+            distanceMeters: draft.distanceMeters,
             weightKg: draft.weightKg,
+            setRole: draft.setRole,
+            setStatus: draft.setStatus,
             note: draft.note,
-          )));
+          ),
+        ),
+      );
     }
   }
 
@@ -146,10 +188,15 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
   Future<void> _editSet(WorkoutSet set) async {
     final draft = await showEditWorkoutSetDialog(context, set);
     if (draft == null) return;
-    await ref.read(databaseProvider).updateWorkoutSet(
+    await ref
+        .read(databaseProvider)
+        .updateWorkoutSet(
           set.id,
+          setRole: Value(draft.setRole),
+          setStatus: Value(draft.setStatus),
           reps: Value(draft.reps),
           durationSeconds: Value(draft.durationSeconds),
+          distanceMeters: Value(draft.distanceMeters),
           weightKg: Value(draft.weightKg),
           note: Value(draft.note),
         );
@@ -160,12 +207,19 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
     if ((s.reps ?? 0) > 0) parts.add('${s.reps} 次');
     final d = s.durationSeconds;
     if (d != null && d > 0) {
-      parts.add(d >= 60
-          ? '${(d / 60).toStringAsFixed(d % 60 == 0 ? 0 : 1)} 分钟'
-          : '$d 秒');
+      parts.add(
+        d >= 60
+            ? '${(d / 60).toStringAsFixed(d % 60 == 0 ? 0 : 1)} 分钟'
+            : '$d 秒',
+      );
     }
+    if ((s.distanceMeters ?? 0) > 0) parts.add('${s.distanceMeters} 米');
     if ((s.weightKg ?? 0) > 0) parts.add('${s.weightKg} kg');
-    if (parts.isEmpty) parts.add('（无效组）');
+    if (s.setStatus == SetStatus.skipped) {
+      parts.insert(0, '已跳过');
+    } else if (parts.isEmpty) {
+      parts.add('（无效组）');
+    }
     if (s.note != null && s.note!.isNotEmpty) parts.add(s.note!);
     return parts.join(' · ');
   }
@@ -176,12 +230,12 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
     final db = ref.read(databaseProvider);
     final messenger = ScaffoldMessenger.of(context);
     final feeling = _feelingController.text.trim();
-    // 选中的方案对象（方案可能已被删除，找不到则视为不关联）
-    final plans = ref.read(exercisePlansProvider).value ?? [];
-    final linked =
-        plans.where((p) => p.id == _selectedPlanId).firstOrNull;
+    TemplateVersion? linkedVersion;
     int? savedId;
     try {
+      linkedVersion = _selectedTemplateVersionId == null
+          ? null
+          : await db.getTemplateVersion(_selectedTemplateVersionId!);
       if (_isEditing) {
         savedId = widget.editing!.id;
         await db.updateWorkoutMeta(
@@ -189,18 +243,16 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
           totalSeconds: Value(_parsedTotalSeconds),
           feeling: Value(feeling.isEmpty ? null : feeling),
         );
-        if (linked != null) {
-          await db.linkPlanToWorkout(savedId, linked);
-        } else if (widget.editing!.planId != null) {
-          await db.clearPlanLink(savedId);
+        if (linkedVersion != null) {
+          await db.linkTemplateToWorkout(savedId, linkedVersion);
+        } else if (widget.editing!.templateVersionId != null) {
+          await db.clearTemplateLink(savedId);
         }
       } else {
-        final hasValid =
-            _drafts.any((e) => e.sets.any((s) => s.isValid));
+        final hasValid = _drafts.any((e) => e.sets.any((s) => s.isValid));
         if (!hasValid) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-                content: Text('至少需要一条有效组（次数或持续时间大于 0）才能保存')),
+          messenger.showSnackBar(
+            const SnackBar(content: Text('至少需要一条有效组（次数或持续时间大于 0）才能保存')),
           );
           return;
         }
@@ -214,31 +266,33 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
             savedId,
             name: exercise.name,
             category: exercise.category,
+            trackingType: exercise.trackingType,
             note: exercise.note,
           );
           for (final set in exercise.sets) {
             await db.addWorkoutSet(
               exerciseId,
+              setRole: set.setRole,
+              setStatus: set.setStatus,
               reps: set.reps,
               durationSeconds: set.durationSeconds,
+              distanceMeters: set.distanceMeters,
               weightKg: set.weightKg,
               note: set.note,
             );
           }
         }
-        if (linked != null) await db.linkPlanToWorkout(savedId, linked);
+        if (linkedVersion != null) {
+          await db.linkTemplateToWorkout(savedId, linkedVersion);
+        }
       }
-      // 关联了方案时按保存后的实际记录给出达标反馈
-      if (linked != null) {
+      // 关联了模板时按计划组关联给出完成反馈；自由添加的动作/组仍视为计划外事实。
+      if (linkedVersion != null) {
         final w = await db.getWorkout(savedId);
         if (w != null) {
-          final ev = AppDatabase.evaluateWorkout(
-            w,
-            await db.getWorkoutExercises(savedId),
-            await db.getWorkoutSets(savedId),
-          );
+          final progress = await db.evaluateWorkoutTemplate(savedId);
           messenger.showSnackBar(
-            SnackBar(content: Text(describePlanEvaluation(ev, w))),
+            SnackBar(content: Text(describeTemplateProgress(progress, w))),
           );
         }
       }
@@ -300,8 +354,9 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
                 labelText: '训练总用时（分钟，可留空）',
                 helperText: '留空表示用时未记录',
               ),
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
             ),
             TextField(
               controller: _feelingController,
@@ -314,20 +369,28 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
     );
   }
 
-  /// 关联方案下拉：无 / 各方案；选中的方案已被删除时回退为「无」
+  /// 关联模板版本下拉：新选择使用当前版本，历史关联保留原版本。
   Widget _buildPlanDropdown() {
-    final plans = ref.watch(exercisePlansProvider).value ?? [];
-    final effectiveId =
-        plans.any((p) => p.id == _selectedPlanId) ? _selectedPlanId : null;
+    final templates = ref.watch(workoutTemplatesProvider).value ?? [];
+    final currentIds = templates.map((t) => t.version.id).toSet();
+    final selected = _selectedTemplateVersionId;
     return DropdownButtonFormField<int?>(
-      initialValue: effectiveId,
+      initialValue: selected,
       decoration: const InputDecoration(labelText: '关联方案（可选）'),
       items: [
         const DropdownMenuItem<int?>(value: null, child: Text('无')),
-        for (final p in plans)
-          DropdownMenuItem<int?>(value: p.id, child: Text(p.name)),
+        if (selected != null && !currentIds.contains(selected))
+          DropdownMenuItem<int?>(
+            value: selected,
+            child: Text(widget.editing?.templateNameSnapshot ?? '历史方案版本'),
+          ),
+        for (final summary in templates)
+          DropdownMenuItem<int?>(
+            value: summary.version.id,
+            child: Text(summary.version.name),
+          ),
       ],
-      onChanged: (v) => setState(() => _selectedPlanId = v),
+      onChanged: (value) => setState(() => _selectedTemplateVersionId = value),
     );
   }
 
@@ -343,8 +406,7 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
           title: '${exercise.name}（${exercise.category.label}）',
           onDelete: () => db.deleteWorkoutExercise(exercise.id),
           sets: [
-            for (final set
-                in sets.where((s) => s.exerciseId == exercise.id))
+            for (final set in sets.where((s) => s.exerciseId == exercise.id))
               ListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
@@ -378,8 +440,7 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
                 trailing: IconButton(
                   icon: const Icon(Icons.close, size: 18),
                   tooltip: '删除组',
-                  onPressed: () =>
-                      setState(() => _drafts[i].sets.removeAt(j)),
+                  onPressed: () => setState(() => _drafts[i].sets.removeAt(j)),
                 ),
               ),
           ],
@@ -405,8 +466,10 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
               Row(
                 children: [
                   Expanded(
-                    child: Text(title,
-                        style: Theme.of(context).textTheme.titleSmall),
+                    child: Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
                   ),
                   IconButton(
                     icon: const Icon(Icons.delete_outline, size: 20),

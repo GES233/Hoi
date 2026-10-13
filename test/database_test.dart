@@ -1,8 +1,13 @@
+import 'dart:io';
+
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hoi/database/database.dart';
+import 'package:hoi/domain/rules/metric.dart';
+import 'package:hoi/domain/rules/rule_ast.dart';
+import 'package:hoi/domain/rules/rule_evaluator.dart';
 
 void main() {
   late AppDatabase db;
@@ -15,553 +20,680 @@ void main() {
     await db.close();
   });
 
-  // 固定时间，注入 now，不用真实等待
-  final t0 = DateTime(2026, 10, 5, 10, 0, 0); // 周一 10:00
+  final t0 = DateTime(2026, 10, 5, 10); // 周一 10:00
 
   Future<Workout> workoutById(int id) async => (await db.getWorkout(id))!;
 
-  test('一场训练多个动作多组，周统计次数仍只计 1', () async {
-    final wid = await db.insertCompletedWorkout(
+  Future<int> addCatalogExercise(
+    String name,
+    TrackingType trackingType, {
+    ExerciseCategory category = ExerciseCategory.resistance,
+  }) {
+    return db.insertExercise(
+      name: name,
+      category: category,
+      trackingType: trackingType,
+    );
+  }
+
+  Future<WorkoutTemplateDefinition> createTemplate({
+    required String name,
+    required List<TemplateExerciseInput> exercises,
+  }) async {
+    final id = await db.createWorkoutTemplate(name: name, exercises: exercises);
+    return (await db.getTemplateDefinition(id))!;
+  }
+
+  test('一场训练多个动作多组，日与周统计都只计 1 场', () async {
+    final workoutId = await db.insertCompletedWorkout(
       date: t0,
       totalSeconds: 3600,
     );
-    final e1 = await db.addWorkoutExercise(
-        wid, name: '深蹲', category: ExerciseCategory.resistance);
-    final e2 = await db.addWorkoutExercise(
-        wid, name: '跑步', category: ExerciseCategory.cardio);
-    await db.addWorkoutSet(e1, reps: 10, weightKg: 60);
-    await db.addWorkoutSet(e1, reps: 10);
-    await db.addWorkoutSet(e2, durationSeconds: 1800);
+    final squat = await db.addWorkoutExercise(
+      workoutId,
+      name: '深蹲',
+      category: ExerciseCategory.resistance,
+    );
+    final running = await db.addWorkoutExercise(
+      workoutId,
+      name: '跑步',
+      category: ExerciseCategory.cardio,
+    );
+    await db.addWorkoutSet(squat, reps: 10, weightKg: 60);
+    await db.addWorkoutSet(squat, reps: 10);
+    await db.addWorkoutSet(running, durationSeconds: 1800);
 
-    final day = await db.watchCompletedWorkouts(t0).first;
-    final week = await db.watchCompletedWorkoutsInWeek(t0).first;
-    expect(day, hasLength(1));
-    expect(week, hasLength(1));
-    expect(week.single.id, wid);
+    expect(await db.watchCompletedWorkouts(t0).first, hasLength(1));
+    expect(await db.watchCompletedWorkoutsInWeek(t0).first, hasLength(1));
   });
 
-  test('次数型与持续时间型组都能正确保存读取', () async {
-    final wid = await db.insertCompletedWorkout(date: t0);
-    final e = await db.addWorkoutExercise(
-        wid, name: '平板支撑', category: ExerciseCategory.core);
-    await db.addWorkoutSet(e, reps: 12, weightKg: 20.5, note: '第一组');
-    await db.addWorkoutSet(e, durationSeconds: 90);
-
-    final sets = await db.watchWorkoutSets(wid).first;
-    expect(sets, hasLength(2));
-    expect(sets[0].reps, 12);
-    expect(sets[0].durationSeconds, isNull);
-    expect(sets[0].weightKg, 20.5);
-    expect(sets[0].note, '第一组');
-    expect(sets[1].reps, isNull);
-    expect(sets[1].durationSeconds, 90);
-    // 两条都是有效组
-    expect(sets.every(AppDatabase.isValidSet), isTrue);
-  });
-
-  test('暂停 10 分钟再恢复，计时与结束总用时都不含暂停段', () async {
-    final w = await db.startWorkout(now: t0);
-    await db.pauseWorkout(w.id, now: t0.add(const Duration(minutes: 5)));
-    await db.resumeWorkout(w.id, now: t0.add(const Duration(minutes: 15)));
-
-    var cur = await workoutById(w.id);
-    expect(cur.pausedSeconds, 600);
-    expect(cur.pausedAt, isNull);
-    // 开始 20 分钟时：1200 秒 - 600 秒暂停 = 600
-    expect(
-      AppDatabase.elapsedSeconds(cur, now: t0.add(const Duration(minutes: 20))),
-      600,
+  test('次数、时长、距离与扩展组事实均可保存', () async {
+    final workoutId = await db.insertCompletedWorkout(date: t0);
+    final exerciseId = await db.addWorkoutExercise(
+      workoutId,
+      name: '综合训练',
+      category: ExerciseCategory.functional,
+    );
+    await db.addWorkoutSet(
+      exerciseId,
+      reps: 12,
+      durationSeconds: 90,
+      distanceMeters: 250.5,
+      weightKg: 20.5,
+      assistanceKg: 5,
+      rpe: 8,
+      rir: 2,
+      note: '第一组',
     );
 
-    final e = await db.addWorkoutExercise(
-        w.id, name: '慢跑', category: ExerciseCategory.cardio);
-    await db.addWorkoutSet(e, durationSeconds: 600);
-    await db.finishWorkout(w.id, now: t0.add(const Duration(minutes: 25)));
-
-    cur = await workoutById(w.id);
-    expect(cur.status, WorkoutStatus.completed);
-    // 25 分钟 - 10 分钟暂停 = 900 秒
-    expect(cur.totalSeconds, 900);
-    expect(cur.endedAt, t0.add(const Duration(minutes: 25)));
+    final set = (await db.getWorkoutSets(workoutId)).single;
+    expect(set.reps, 12);
+    expect(set.durationSeconds, 90);
+    expect(set.distanceMeters, 250.5);
+    expect(set.weightKg, 20.5);
+    expect(set.assistanceKg, 5);
+    expect(set.rpe, 8);
+    expect(set.rir, 2);
+    expect(set.note, '第一组');
+    expect(AppDatabase.isValidSet(set), isTrue);
   });
 
-  test('暂停中结束训练，进行中的暂停段也不计入总用时', () async {
-    final w = await db.startWorkout(now: t0);
-    await db.pauseWorkout(w.id, now: t0.add(const Duration(minutes: 5)));
+  test('暂停、恢复和结束计时排除暂停段', () async {
+    final workout = await db.startWorkout(now: t0);
+    await db.pauseWorkout(workout.id, now: t0.add(const Duration(minutes: 5)));
+    await db.resumeWorkout(
+      workout.id,
+      now: t0.add(const Duration(minutes: 15)),
+    );
+    final exerciseId = await db.addWorkoutExercise(
+      workout.id,
+      name: '慢跑',
+      category: ExerciseCategory.cardio,
+    );
+    await db.addWorkoutSet(exerciseId, durationSeconds: 600);
+    await db.finishWorkout(
+      workout.id,
+      now: t0.add(const Duration(minutes: 25)),
+    );
 
-    final e = await db.addWorkoutExercise(
-        w.id, name: '骑行', category: ExerciseCategory.cardio);
-    await db.addWorkoutSet(e, durationSeconds: 300);
-    // 暂停中直接结束：10 分钟时结束，总用时 = 5 分钟
-    await db.finishWorkout(w.id, now: t0.add(const Duration(minutes: 10)));
-
-    final cur = await workoutById(w.id);
-    expect(cur.totalSeconds, 300);
-    expect(cur.pausedAt, isNull);
+    final completed = await workoutById(workout.id);
+    expect(completed.status, WorkoutStatus.completed);
+    expect(completed.pausedSeconds, 600);
+    expect(completed.totalSeconds, 900);
   });
 
-  test('startWorkout 后可恢复同一场训练，再次 startWorkout 不创建第二场', () async {
-    final w1 = await db.startWorkout(now: t0);
-
-    // 模拟重启后恢复：重新查询进行中的训练
-    final ongoing = await db.getOngoingWorkout();
-    expect(ongoing?.id, w1.id);
-    expect(ongoing?.startedAt, t0);
-
-    final w2 = await db.startWorkout(now: t0.add(const Duration(minutes: 1)));
-    expect(w2.id, w1.id);
+  test('startWorkout 幂等，且无有效组不能结束', () async {
+    final first = await db.startWorkout(now: t0);
+    final second = await db.startWorkout(
+      now: t0.add(const Duration(minutes: 1)),
+    );
+    expect(second.id, first.id);
     expect(await db.select(db.workouts).get(), hasLength(1));
 
-    // 监听流同样返回该场训练
-    final watched = await db.watchOngoingWorkout().first;
-    expect(watched?.id, w1.id);
-  });
-
-  test('补记 totalSeconds 为 null 时周分钟统计不推算，只计入次数', () async {
-    await db.insertCompletedWorkout(date: t0, totalSeconds: null);
-    await db.insertCompletedWorkout(date: t0, totalSeconds: 1800);
-
-    final week = await db.watchCompletedWorkoutsInWeek(t0).first;
-    expect(week, hasLength(2)); // 次数计 2
-    // 分钟只累计已知总用时：1800 秒 = 30 分钟，未知的不补 0 也不推算
-    final totalSeconds =
-        week.fold<int>(0, (sum, w) => sum + (w.totalSeconds ?? 0));
-    expect(totalSeconds ~/ 60, 30);
-
-    final nullOne = week.firstWhere((w) => w.totalSeconds == null);
-    expect(nullOne.startedAt, isNull);
-    expect(nullOne.endedAt, isNull);
-  });
-
-  test('进行中训练不出现在已完成列表与周统计里', () async {
-    await db.startWorkout(now: t0);
-
-    expect(await db.watchCompletedWorkouts(t0).first, isEmpty);
-    expect(await db.watchCompletedWorkoutsInWeek(t0).first, isEmpty);
-  });
-
-  test('无有效组时 finishWorkout 抛 StateError', () async {
-    final w = await db.startWorkout(now: t0);
-    // 完全没有组
-    expect(
-      () => db.finishWorkout(w.id, now: t0.add(const Duration(minutes: 10))),
-      throwsStateError,
+    expect(() => db.finishWorkout(first.id), throwsStateError);
+    final exerciseId = await db.addWorkoutExercise(
+      first.id,
+      name: '拉伸',
+      category: ExerciseCategory.functional,
     );
-
-    // 有组但全无效（次数为空、时长为 0）
-    final e = await db.addWorkoutExercise(
-        w.id, name: '拉伸', category: ExerciseCategory.functional);
-    await db.addWorkoutSet(e, durationSeconds: 0);
-    expect(
-      () => db.finishWorkout(w.id, now: t0.add(const Duration(minutes: 10))),
-      throwsStateError,
-    );
-    // 训练仍是进行中
-    expect((await workoutById(w.id)).status, WorkoutStatus.inProgress);
-
-    // 补一条有效组后可以结束
-    await db.addWorkoutSet(e, reps: 5);
-    await db.finishWorkout(w.id, now: t0.add(const Duration(minutes: 10)));
-    final done = await workoutById(w.id);
-    expect(done.status, WorkoutStatus.completed);
-    expect(done.totalSeconds, 600);
+    await db.addWorkoutSet(exerciseId, durationSeconds: 0);
+    expect(() => db.finishWorkout(first.id), throwsStateError);
+    await db.addWorkoutSet(exerciseId, reps: 5);
+    await db.finishWorkout(first.id, now: t0.add(const Duration(minutes: 10)));
+    expect((await workoutById(first.id)).status, WorkoutStatus.completed);
   });
 
-  test('discardWorkout 级联删除动作与组', () async {
-    final w = await db.startWorkout(now: t0);
-    final e = await db.addWorkoutExercise(
-        w.id, name: '硬拉', category: ExerciseCategory.resistance);
-    await db.addWorkoutSet(e, reps: 8, weightKg: 80);
-    await db.addWorkoutSet(e, reps: 8, weightKg: 80);
+  test('discardWorkout 显式级联删除动作与组', () async {
+    final workout = await db.startWorkout(now: t0);
+    final exerciseId = await db.addWorkoutExercise(
+      workout.id,
+      name: '硬拉',
+      category: ExerciseCategory.resistance,
+    );
+    await db.addWorkoutSet(exerciseId, reps: 8, weightKg: 80);
 
-    await db.discardWorkout(w.id);
+    await db.discardWorkout(workout.id);
 
     expect(await db.select(db.workouts).get(), isEmpty);
     expect(await db.select(db.workoutExercises).get(), isEmpty);
     expect(await db.select(db.workoutSets).get(), isEmpty);
-    expect(await db.getOngoingWorkout(), isNull);
   });
 
-  test('updateWorkoutMeta 可修改、可清空总用时与感受', () async {
-    final wid = await db.insertCompletedWorkout(
+  test('updateWorkoutMeta 可修改并清空可空字段', () async {
+    final workoutId = await db.insertCompletedWorkout(
       date: t0,
       totalSeconds: 1800,
       feeling: '轻松',
     );
+    await db.updateWorkoutMeta(workoutId, feeling: const Value('有点累'));
+    await db.updateWorkoutMeta(workoutId, totalSeconds: const Value(null));
 
-    // 只改感受，总用时不变
-    await db.updateWorkoutMeta(wid, feeling: const Value('有点累'));
-    var w = await workoutById(wid);
-    expect(w.totalSeconds, 1800);
-    expect(w.feeling, '有点累');
-
-    // 清空总用时
-    await db.updateWorkoutMeta(wid, totalSeconds: const Value(null));
-    w = await workoutById(wid);
-    expect(w.totalSeconds, isNull);
-    expect(w.feeling, '有点累');
+    final workout = await workoutById(workoutId);
+    expect(workout.totalSeconds, isNull);
+    expect(workout.feeling, '有点累');
   });
 
-  group('阶段 2：方案与达标', () {
-    Future<ExercisePlan> planById(int id) async =>
-        (await db.getExercisePlan(id))!;
+  test('v3 升到 v4 会重置旧表，第二次打开不会再次清空', () async {
+    await db.close();
+    final directory = Directory.systemTemp.createTempSync('hoi-v4-migration-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final file = File('${directory.path}/legacy.sqlite');
+    final legacyTables = [
+      'workout_sets',
+      'workout_exercises',
+      'workouts',
+      'exercise_plans',
+      'rest_marks',
+      'weekly_exercise_goals',
+      'favorite_foods',
+      'food_entries',
+    ];
+    final migrated = AppDatabase(
+      NativeDatabase(
+        file,
+        setup: (raw) {
+          for (final table in legacyTables) {
+            raw.execute('CREATE TABLE $table (id INTEGER PRIMARY KEY)');
+            raw.execute('INSERT INTO $table DEFAULT VALUES');
+          }
+          raw.execute('PRAGMA user_version = 3');
+        },
+      ),
+    );
+    final exerciseId = await migrated.insertExercise(
+      name: '迁移后动作',
+      category: ExerciseCategory.functional,
+      trackingType: TrackingType.reps,
+    );
+    expect(await migrated.select(migrated.foodEntries).get(), isEmpty);
+    expect(await migrated.select(migrated.exercises).get(), hasLength(1));
+    await migrated.close();
 
-    Future<PlanEvaluation> evaluateById(int wid) async {
-      final w = (await db.getWorkout(wid))!;
-      return AppDatabase.evaluateWorkout(
-          w, await db.getWorkoutExercises(wid), await db.getWorkoutSets(wid));
-    }
+    final reopened = AppDatabase(NativeDatabase(file));
+    addTearDown(reopened.close);
+    expect((await reopened.getExercise(exerciseId))?.name, '迁移后动作');
+  });
 
-    /// 建一场关联方案的已完成训练，含一个同名动作
-    Future<({int workoutId, int exerciseId})> linkedWorkout(
-      ExercisePlan plan, {
-      DateTime? date,
-    }) async {
-      final wid = await db.insertCompletedWorkout(date: date ?? t0);
-      await db.linkPlanToWorkout(wid, plan);
-      final eid = await db.addWorkoutExercise(wid,
-          name: plan.exerciseName, category: plan.category);
-      return (workoutId: wid, exerciseId: eid);
-    }
-
-    test('sets 指标下无效组不参与达标', () async {
-      final pid = await db.insertExercisePlan(
-        name: '深蹲方案',
-        exerciseName: '深蹲',
-        category: ExerciseCategory.resistance,
-        metric: PlanMetric.sets,
-        minThreshold: 2,
-        regularThreshold: 3,
-      );
-      final w = await linkedWorkout(await planById(pid));
-      // 无效组：次数为 0、全空、时长为 0
-      await db.addWorkoutSet(w.exerciseId, reps: 0);
-      await db.addWorkoutSet(w.exerciseId);
-      await db.addWorkoutSet(w.exerciseId, durationSeconds: 0);
-      var ev = await evaluateById(w.workoutId);
-      expect(ev.actual, 0);
-      expect(ev.tier, PlanTier.belowMin);
-
-      // 补两条有效组后达到最低
-      await db.addWorkoutSet(w.exerciseId, reps: 10);
-      await db.addWorkoutSet(w.exerciseId, reps: 10);
-      ev = await evaluateById(w.workoutId);
-      expect(ev.actual, 2);
-      expect(ev.tier, PlanTier.min);
-    });
-
-    test('duration 与 sets 指标各自的 belowMin / min / regular 判定', () async {
-      final durationPid = await db.insertExercisePlan(
-        name: '步行方案',
-        exerciseName: '步行',
+  group('阶段 1：动作身份与模板版本', () {
+    test('一个模板版本支持多个动作，每个动作支持多个计划组', () async {
+      final squatId = await addCatalogExercise('深蹲', TrackingType.reps);
+      final runId = await addCatalogExercise(
+        '跑步',
+        TrackingType.distance,
         category: ExerciseCategory.cardio,
-        metric: PlanMetric.duration,
-        minThreshold: 900, // 15 分钟
-        regularThreshold: 1800, // 30 分钟
       );
-      final durationPlan = await planById(durationPid);
-
-      // duration：600 秒未达最低
-      var w = await linkedWorkout(durationPlan);
-      await db.addWorkoutSet(w.exerciseId, durationSeconds: 600);
-      var ev = await evaluateById(w.workoutId);
-      expect(ev.actual, 600);
-      expect(ev.tier, PlanTier.belowMin);
-
-      // duration：1200 秒达最低
-      w = await linkedWorkout(durationPlan);
-      await db.addWorkoutSet(w.exerciseId, durationSeconds: 1200);
-      ev = await evaluateById(w.workoutId);
-      expect(ev.tier, PlanTier.min);
-
-      // duration：两条时长组累计 2000 秒达常规
-      w = await linkedWorkout(durationPlan);
-      await db.addWorkoutSet(w.exerciseId, durationSeconds: 1200);
-      await db.addWorkoutSet(w.exerciseId, durationSeconds: 800);
-      ev = await evaluateById(w.workoutId);
-      expect(ev.actual, 2000);
-      expect(ev.tier, PlanTier.regular);
-
-      final setsPid = await db.insertExercisePlan(
-        name: '俯卧撑方案',
-        exerciseName: '俯卧撑',
-        category: ExerciseCategory.resistance,
-        metric: PlanMetric.sets,
-        minThreshold: 2,
-        regularThreshold: 3,
+      final definition = await createTemplate(
+        name: '全身训练',
+        exercises: [
+          TemplateExerciseInput(
+            exerciseId: squatId,
+            sets: const [
+              TemplateSetInput(reps: 8, minimumReps: 5),
+              TemplateSetInput(reps: 8),
+            ],
+          ),
+          TemplateExerciseInput(
+            exerciseId: runId,
+            sets: const [
+              TemplateSetInput(
+                distanceMeters: 1000,
+                minimumDistanceMeters: 500,
+              ),
+            ],
+          ),
+        ],
       );
-      final setsPlan = await planById(setsPid);
 
-      // sets：1 组未达最低
-      w = await linkedWorkout(setsPlan);
-      await db.addWorkoutSet(w.exerciseId, reps: 8);
-      ev = await evaluateById(w.workoutId);
-      expect(ev.actual, 1);
-      expect(ev.tier, PlanTier.belowMin);
-
-      // sets：2 组达最低
-      w = await linkedWorkout(setsPlan);
-      await db.addWorkoutSet(w.exerciseId, reps: 8);
-      await db.addWorkoutSet(w.exerciseId, durationSeconds: 60);
-      ev = await evaluateById(w.workoutId);
-      expect(ev.actual, 2);
-      expect(ev.tier, PlanTier.min);
-
-      // sets：3 组达常规
-      w = await linkedWorkout(setsPlan);
-      for (var i = 0; i < 3; i++) {
-        await db.addWorkoutSet(w.exerciseId, reps: 8);
-      }
-      ev = await evaluateById(w.workoutId);
-      expect(ev.actual, 3);
-      expect(ev.tier, PlanTier.regular);
+      expect(definition.exercises, hasLength(2));
+      expect(definition.sets, hasLength(3));
+      expect(definition.exercises.map((e) => e.exerciseId), [squatId, runId]);
+      expect(definition.exercises.first.exerciseNameSnapshot, '深蹲');
+      expect(
+        definition.exercises.last.trackingTypeSnapshot,
+        TrackingType.distance,
+      );
     });
 
-    test('不同名动作的记录不替代目标动作', () async {
-      final pid = await db.insertExercisePlan(
-        name: '步行方案',
-        exerciseName: '步行',
+    test('按模板开始训练复制动作快照，实际组自动关联下一个计划组', () async {
+      final exerciseId = await addCatalogExercise('俯卧撑', TrackingType.reps);
+      final definition = await createTemplate(
+        name: '俯卧撑三组',
+        exercises: [
+          TemplateExerciseInput(
+            exerciseId: exerciseId,
+            sets: const [
+              TemplateSetInput(reps: 10, minimumReps: 5),
+              TemplateSetInput(reps: 10),
+              TemplateSetInput(reps: 10),
+            ],
+          ),
+        ],
+      );
+      final workout = await db.startWorkout(
+        now: t0,
+        templateVersion: definition.version,
+      );
+      final actualExercise = (await db.getWorkoutExercises(workout.id)).single;
+      expect(actualExercise.catalogExerciseId, exerciseId);
+      expect(actualExercise.templateExerciseId, definition.exercises.single.id);
+      expect(actualExercise.name, '俯卧撑');
+
+      await db.addWorkoutSet(actualExercise.id, reps: 6);
+      await db.addWorkoutSet(actualExercise.id, reps: 10);
+      await db.addWorkoutSet(actualExercise.id, reps: 10);
+      final actualSets = await db.getWorkoutSets(workout.id);
+      expect(
+        actualSets.map((set) => set.templateSetId),
+        definition.sets.map((set) => set.id),
+      );
+      final progress = await db.evaluateWorkoutTemplate(workout.id);
+      expect(progress.minimumCompleted, 1);
+      expect(progress.minimumTotal, 1);
+      expect(progress.regularCompleted, 2);
+      expect(progress.regularTotal, 3);
+      expect(progress.tier, PlanTier.min);
+    });
+
+    test('未配置最低量时仍可记录，只有常规全部完成才达常规', () async {
+      final exerciseId = await addCatalogExercise(
+        '平板支撑',
+        TrackingType.duration,
+      );
+      final definition = await createTemplate(
+        name: '平板支撑',
+        exercises: [
+          TemplateExerciseInput(
+            exerciseId: exerciseId,
+            sets: const [TemplateSetInput(durationSeconds: 60)],
+          ),
+        ],
+      );
+      final workout = await db.startWorkout(
+        templateVersion: definition.version,
+      );
+      final actualExercise = (await db.getWorkoutExercises(workout.id)).single;
+
+      await db.addWorkoutSet(actualExercise.id, durationSeconds: 30);
+      var progress = await db.evaluateWorkoutTemplate(workout.id);
+      expect(progress.minimumTotal, 0);
+      expect(progress.tier, PlanTier.belowMin);
+
+      await db.updateWorkoutSet(
+        (await db.getWorkoutSets(workout.id)).single.id,
+        durationSeconds: const Value(60),
+      );
+      progress = await db.evaluateWorkoutTemplate(workout.id);
+      expect(progress.tier, PlanTier.regular);
+    });
+
+    test('跳过组和零值组不完成计划，计划外动作与额外组被保留', () async {
+      final exerciseId = await addCatalogExercise('深蹲', TrackingType.reps);
+      final definition = await createTemplate(
+        name: '深蹲',
+        exercises: [
+          TemplateExerciseInput(
+            exerciseId: exerciseId,
+            sets: const [TemplateSetInput(reps: 8, minimumReps: 5)],
+          ),
+        ],
+      );
+      final workout = await db.startWorkout(
+        templateVersion: definition.version,
+      );
+      final plannedExercise = (await db.getWorkoutExercises(workout.id)).single;
+      await db.addWorkoutSet(
+        plannedExercise.id,
+        reps: 8,
+        setStatus: SetStatus.skipped,
+      );
+      await db.addWorkoutSet(plannedExercise.id, reps: 0);
+      var progress = await db.evaluateWorkoutTemplate(workout.id);
+      expect(progress.tier, PlanTier.belowMin);
+
+      // 两个计划组槽位已占用，后续记录成为额外组，不会错误替代已跳过的计划组。
+      final extraSetId = await db.addWorkoutSet(plannedExercise.id, reps: 20);
+      final extraSet = (await db.getWorkoutSets(workout.id))
+          .firstWhere((set) => set.id == extraSetId);
+      expect(extraSet.templateSetId, isNull);
+      final extraExerciseId = await db.addWorkoutExercise(
+        workout.id,
+        name: '散步',
         category: ExerciseCategory.cardio,
-        metric: PlanMetric.duration,
-        minThreshold: 900,
-        regularThreshold: 1800,
       );
-      final plan = await planById(pid);
-      final wid = await db.insertCompletedWorkout(date: t0);
-      await db.linkPlanToWorkout(wid, plan);
-      // 大量其他动作的记录也不累计
-      final running = await db.addWorkoutExercise(wid,
-          name: '跑步', category: ExerciseCategory.cardio);
-      await db.addWorkoutSet(running, durationSeconds: 3600);
-      var ev = await evaluateById(wid);
-      expect(ev.actual, 0);
-      expect(ev.tier, PlanTier.belowMin);
-
-      // 同名动作才累计
-      final walking = await db.addWorkoutExercise(wid,
-          name: '步行', category: ExerciseCategory.cardio);
-      await db.addWorkoutSet(walking, durationSeconds: 300);
-      ev = await evaluateById(wid);
-      expect(ev.actual, 300);
-      expect(ev.tier, PlanTier.belowMin);
+      await db.addWorkoutSet(extraExerciseId, durationSeconds: 600);
+      expect(await db.getWorkoutExercises(workout.id), hasLength(2));
+      progress = await db.evaluateWorkoutTemplate(workout.id);
+      expect(progress.tier, PlanTier.belowMin);
     });
 
-    test('未关联方案的训练评估为 none；方案表为空时每日状态为 noPlan', () async {
-      final wid = await db.insertCompletedWorkout(date: t0, totalSeconds: 1800);
-      final eid = await db.addWorkoutExercise(wid,
-          name: '跑步', category: ExerciseCategory.cardio);
-      await db.addWorkoutSet(eid, durationSeconds: 1800);
+    test('修订创建新版本，旧训练继续按原版本和动作快照解释', () async {
+      final exerciseId = await addCatalogExercise(
+        '步行',
+        TrackingType.duration,
+        category: ExerciseCategory.cardio,
+      );
+      final v1 = await createTemplate(
+        name: '晨间步行',
+        exercises: [
+          TemplateExerciseInput(
+            exerciseId: exerciseId,
+            sets: const [
+              TemplateSetInput(
+                durationSeconds: 1800,
+                minimumDurationSeconds: 900,
+              ),
+            ],
+          ),
+        ],
+      );
+      final workout = await db.startWorkout(templateVersion: v1.version);
+      final actualExercise = (await db.getWorkoutExercises(workout.id)).single;
+      await db.addWorkoutSet(actualExercise.id, durationSeconds: 1200);
+      expect((await db.evaluateWorkoutTemplate(workout.id)).tier, PlanTier.min);
 
-      final ev = await evaluateById(wid);
-      expect(ev.tier, PlanTier.none);
-      expect(ev.actual, 0);
+      await db.updateExercise(
+        exerciseId,
+        name: '快走',
+        category: ExerciseCategory.cardio,
+        trackingType: TrackingType.duration,
+      );
+      await db.reviseWorkoutTemplate(
+        v1.template.id,
+        name: '晨间快走',
+        exercises: [
+          TemplateExerciseInput(
+            exerciseId: exerciseId,
+            sets: const [
+              TemplateSetInput(
+                durationSeconds: 3600,
+                minimumDurationSeconds: 1800,
+              ),
+            ],
+          ),
+        ],
+      );
 
-      // 即使当天有已完成训练，方案表为空也不误判完成
+      final current = (await db.getTemplateDefinition(v1.template.id))!;
+      final old = (await db.getTemplateDefinitionByVersion(v1.version.id))!;
+      expect(current.version.versionNumber, 2);
+      expect(current.exercises.single.exerciseNameSnapshot, '快走');
+      expect(old.version.versionNumber, 1);
+      expect(old.exercises.single.exerciseNameSnapshot, '步行');
+      expect((await workoutById(workout.id)).templateVersionId, v1.version.id);
+      expect(
+        (await workoutById(workout.id)).templateEvaluationPolicyVersion,
+        1,
+      );
+      expect((await db.evaluateWorkoutTemplate(workout.id)).tier, PlanTier.min);
+    });
+
+    test('归档模板和动作不删除历史训练或不可变版本', () async {
+      final exerciseId = await addCatalogExercise('划船', TrackingType.reps);
+      final definition = await createTemplate(
+        name: '划船训练',
+        exercises: [
+          TemplateExerciseInput(
+            exerciseId: exerciseId,
+            sets: const [TemplateSetInput(reps: 10)],
+          ),
+        ],
+      );
+      final workout = await db.startWorkout(
+        templateVersion: definition.version,
+      );
+      final actualExercise = (await db.getWorkoutExercises(workout.id)).single;
+      await db.addWorkoutSet(actualExercise.id, reps: 10);
+      await db.archiveWorkoutTemplate(definition.template.id, now: t0);
+      await db.archiveExercise(exerciseId, now: t0);
+
+      expect(await db.watchWorkoutTemplates().first, isEmpty);
+      expect(await db.watchExercises().first, isEmpty);
+      expect(
+        await db.getTemplateDefinitionByVersion(definition.version.id),
+        isNotNull,
+      );
+      expect(await db.getWorkout(workout.id), isNotNull);
+      expect(await db.getWorkoutExercises(workout.id), hasLength(1));
+      expect(
+        (await db.evaluateWorkoutTemplate(workout.id)).tier,
+        PlanTier.regular,
+      );
+    });
+
+    test('模板校验拒绝空模板、空计划组与不合法最低量', () async {
+      final exerciseId = await addCatalogExercise('深蹲', TrackingType.reps);
+      expect(
+        () => db.createWorkoutTemplate(name: '空模板', exercises: const []),
+        throwsArgumentError,
+      );
+      expect(
+        () => db.createWorkoutTemplate(
+          name: '空动作',
+          exercises: [
+            TemplateExerciseInput(exerciseId: exerciseId, sets: const []),
+          ],
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => db.createWorkoutTemplate(
+          name: '错误最低量',
+          exercises: [
+            TemplateExerciseInput(
+              exerciseId: exerciseId,
+              sets: const [TemplateSetInput(reps: 5, minimumReps: 6)],
+            ),
+          ],
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('每日状态区分无方案、休息、已记录、最低与常规', () async {
       expect(await db.watchDailyStatus(t0).first, DailyStatus.noPlan);
-    });
-
-    test('补记关联方案后归属正确日期与周，并参与当天判定', () async {
-      final pid = await db.insertExercisePlan(
-        name: '深蹲方案',
-        exerciseName: '深蹲',
-        category: ExerciseCategory.resistance,
-        metric: PlanMetric.sets,
-        minThreshold: 2,
-        regularThreshold: 3,
+      final exerciseId = await addCatalogExercise('俯卧撑', TrackingType.reps);
+      final definition = await createTemplate(
+        name: '俯卧撑',
+        exercises: [
+          TemplateExerciseInput(
+            exerciseId: exerciseId,
+            sets: const [TemplateSetInput(reps: 10, minimumReps: 5)],
+          ),
+        ],
       );
-      final w = await linkedWorkout(await planById(pid));
+      await db.setRestMark(t0, note: '恢复');
+      expect(await db.watchDailyStatus(t0).first, DailyStatus.rest);
+      await db.removeRestMark(t0);
+      expect(await db.watchDailyStatus(t0).first, DailyStatus.none);
 
-      // 归属正确日期与周
-      final day = await db.watchCompletedWorkouts(t0).first;
-      expect(day.single.id, w.workoutId);
-      expect(day.single.date, AppDatabase.dateOnly(t0));
-      expect(await db.watchCompletedWorkoutsInWeek(t0).first, hasLength(1));
-
-      // 1 组：有已完成训练但未达最低 → recorded
-      await db.addWorkoutSet(w.exerciseId, reps: 8);
+      final workout = await db.startWorkout(
+        now: t0,
+        templateVersion: definition.version,
+      );
+      final actualExercise = (await db.getWorkoutExercises(workout.id)).single;
+      final setId = await db.addWorkoutSet(actualExercise.id, reps: 3);
+      await db.finishWorkout(
+        workout.id,
+        now: t0.add(const Duration(minutes: 10)),
+      );
       expect(await db.watchDailyStatus(t0).first, DailyStatus.recorded);
-
-      // 2 组 → 最低完成；3 组 → 常规完成
-      await db.addWorkoutSet(w.exerciseId, reps: 8);
+      await db.updateWorkoutSet(setId, reps: const Value(6));
       expect(await db.watchDailyStatus(t0).first, DailyStatus.minDone);
-      await db.addWorkoutSet(w.exerciseId, reps: 8);
+      await db.updateWorkoutSet(setId, reps: const Value(10));
       expect(await db.watchDailyStatus(t0).first, DailyStatus.regularDone);
     });
+  });
 
-    test('方案编辑阈值、删除方案后，历史训练按快照判定结果不变', () async {
-      final pid = await db.insertExercisePlan(
-        name: '步行方案',
-        exerciseName: '步行',
+  group('阶段 3：周期目标持久化', () {
+    test('RuleSet JSON 持久化后可按周读取事实并评估 ALL', () async {
+      final runningId = await addCatalogExercise(
+        '跑步',
+        TrackingType.duration,
         category: ExerciseCategory.cardio,
-        metric: PlanMetric.duration,
-        minThreshold: 900,
-        regularThreshold: 1800,
       );
-      final w = await linkedWorkout(await planById(pid));
-      await db.addWorkoutSet(w.exerciseId, durationSeconds: 1200);
-      expect((await evaluateById(w.workoutId)).tier, PlanTier.min);
-
-      // 编辑方案阈值：快照不变，判定结果不变
-      await db.updateExercisePlan(
-        pid,
-        name: '步行方案（加强版）',
-        exerciseName: '步行',
-        category: ExerciseCategory.cardio,
-        metric: PlanMetric.duration,
-        minThreshold: 3600,
-        regularThreshold: 7200,
-      );
-      var workout = await workoutById(w.workoutId);
-      expect(workout.planMin, 900);
-      expect(workout.planRegular, 1800);
-      expect((await evaluateById(w.workoutId)).tier, PlanTier.min);
-
-      // 删除方案：训练与其动作、组原样保留，仍按快照判定
-      await db.deleteExercisePlan(pid);
-      expect(await db.select(db.exercisePlans).get(), isEmpty);
-      workout = await workoutById(w.workoutId);
-      expect(workout.planName, '步行方案');
-      expect((await evaluateById(w.workoutId)).tier, PlanTier.min);
-      expect(await db.getWorkoutExercises(w.workoutId), hasLength(1));
-      expect(await db.getWorkoutSets(w.workoutId), hasLength(1));
-    });
-
-    test('增删组记录后重新 evaluate，档位随之变化', () async {
-      final pid = await db.insertExercisePlan(
-        name: '俯卧撑方案',
-        exerciseName: '俯卧撑',
-        category: ExerciseCategory.resistance,
-        metric: PlanMetric.sets,
-        minThreshold: 2,
-        regularThreshold: 3,
-      );
-      final w = await linkedWorkout(await planById(pid));
-
-      final s1 = await db.addWorkoutSet(w.exerciseId, reps: 8);
-      expect((await evaluateById(w.workoutId)).tier, PlanTier.belowMin);
-      await db.addWorkoutSet(w.exerciseId, reps: 8);
-      expect((await evaluateById(w.workoutId)).tier, PlanTier.min);
-      await db.addWorkoutSet(w.exerciseId, reps: 8);
-      expect((await evaluateById(w.workoutId)).tier, PlanTier.regular);
-
-      // 删掉一组回到最低，再删到只剩一组回到未达最低
-      final sets = await db.getWorkoutSets(w.workoutId);
-      await db.deleteWorkoutSet(sets.last.id);
-      expect((await evaluateById(w.workoutId)).tier, PlanTier.min);
-      await db.deleteWorkoutSet(s1);
-      expect((await evaluateById(w.workoutId)).tier, PlanTier.belowMin);
-    });
-
-    test('休息标记可 upsert 与取消；有标记的当天状态为 rest，且不影响周统计', () async {
-      // upsert：同一天重复标记只保留一行，备注被更新
-      await db.setRestMark(t0, note: '膝盖不舒服');
-      await db.setRestMark(t0, note: '出差');
-      expect(await db.select(db.restMarks).get(), hasLength(1));
-      var mark = await db.watchRestMark(t0).first;
-      expect(mark, isNotNull);
-      expect(mark!.note, '出差');
-      expect(mark.date, AppDatabase.dateOnly(t0));
-
-      // 有方案、无完成训练、有休息标记 → rest
-      await db.insertExercisePlan(
-        name: '步行方案',
-        exerciseName: '步行',
-        category: ExerciseCategory.cardio,
-        metric: PlanMetric.duration,
-        minThreshold: 900,
-        regularThreshold: 1800,
-      );
-      expect(await db.watchDailyStatus(t0).first, DailyStatus.rest);
-      // 休息标记不产生训练记录，周统计次数不受影响
-      expect(await db.watchCompletedWorkoutsInWeek(t0).first, isEmpty);
-
-      // 取消标记后恢复为 none
-      await db.removeRestMark(t0);
-      expect(await db.watchRestMark(t0).first, isNull);
-      expect(await db.watchDailyStatus(t0).first, DailyStatus.none);
-    });
-
-    test('阈值校验：最低不大于 0 或常规低于最低时抛 ArgumentError', () async {
-      expect(
-        () => db.insertExercisePlan(
-          name: 'x',
-          exerciseName: 'x',
+      for (var i = 0; i < 3; i++) {
+        final workoutId = await db.insertCompletedWorkout(
+          date: t0.add(Duration(days: i)),
+        );
+        final exerciseId = await db.addWorkoutExercise(
+          workoutId,
+          name: '跑步',
           category: ExerciseCategory.cardio,
-          metric: PlanMetric.duration,
-          minThreshold: 0,
-          regularThreshold: 600,
+          catalogExerciseId: runningId,
+          trackingType: TrackingType.duration,
+        );
+        await db.addWorkoutSet(exerciseId, durationSeconds: 600);
+      }
+      final expression = AllRule([
+        const ComparisonRule(
+          metricId: 'session_count',
+          operator: ComparisonOperator.greaterOrEqual,
+          target: 3,
+        ),
+        ComparisonRule(
+          metricId: 'duration',
+          filters: MetricFilters(exerciseId: runningId),
+          operator: ComparisonOperator.greaterOrEqual,
+          target: 1800,
+        ),
+      ]);
+      final ruleId = await db.createRuleSet(
+        name: '每周三次并跑满半小时',
+        period: RulePeriod.week,
+        effectiveFromDate: t0,
+        combineMode: RuleCombineMode.all,
+        expression: expression,
+      );
+
+      final saved = (await db.getRuleSet(ruleId))!;
+      expect(db.decodeRuleExpression(saved), isA<AllRule>());
+      final result = (await db.evaluateRuleSets(t0)).single;
+      expect(result.ruleSet.id, ruleId);
+      expect(result.evaluation.status, RuleResultStatus.passed);
+      expect(result.evaluation.children.map((child) => child.actual), [
+        3,
+        1800,
+      ]);
+    });
+
+    test('编辑与归档规则不改训练事实，生效日期会过滤规则', () async {
+      final workoutId = await db.insertCompletedWorkout(date: t0);
+      final original = AllRule(const [
+        ComparisonRule(
+          metricId: 'session_count',
+          operator: ComparisonOperator.greaterOrEqual,
+          target: 2,
+        ),
+      ]);
+      final ruleId = await db.createRuleSet(
+        name: '每日两次',
+        period: RulePeriod.day,
+        effectiveFromDate: t0,
+        effectiveUntilDate: t0,
+        combineMode: RuleCombineMode.all,
+        expression: original,
+      );
+      expect(
+        (await db.evaluateRuleSets(t0)).single.evaluation.status,
+        RuleResultStatus.partial,
+      );
+      expect(
+        await db.evaluateRuleSets(t0.add(const Duration(days: 1))),
+        isEmpty,
+      );
+
+      await db.updateRuleSetDefinition(
+        ruleId,
+        name: '每日一次',
+        period: RulePeriod.day,
+        effectiveFromDate: t0,
+        effectiveUntilDate: t0,
+        combineMode: RuleCombineMode.any,
+        expression: AnyRule(const [
+          ComparisonRule(
+            metricId: 'session_count',
+            operator: ComparisonOperator.greaterOrEqual,
+            target: 1,
+          ),
+        ]),
+      );
+      expect(
+        (await db.evaluateRuleSets(t0)).single.evaluation.status,
+        RuleResultStatus.passed,
+      );
+      expect(await db.getWorkout(workoutId), isNotNull);
+      await db.archiveRuleSet(ruleId, now: t0);
+      expect(await db.watchRuleSets().first, isEmpty);
+      expect(await db.getWorkout(workoutId), isNotNull);
+    });
+
+    test('不完整或根组合不一致的 RuleSet 不保存', () async {
+      expect(
+        () => db.createRuleSet(
+          name: '',
+          period: RulePeriod.week,
+          effectiveFromDate: t0,
+          combineMode: RuleCombineMode.all,
+          expression: AllRule(const [
+            ComparisonRule(
+              metricId: 'session_count',
+              operator: ComparisonOperator.greaterOrEqual,
+              target: 1,
+            ),
+          ]),
         ),
         throwsArgumentError,
       );
       expect(
-        () => db.insertExercisePlan(
-          name: 'x',
-          exerciseName: 'x',
-          category: ExerciseCategory.cardio,
-          metric: PlanMetric.sets,
-          minThreshold: 3,
-          regularThreshold: 2,
+        () => db.createRuleSet(
+          name: '错误组合',
+          period: RulePeriod.week,
+          effectiveFromDate: t0,
+          combineMode: RuleCombineMode.all,
+          expression: AnyRule(const [
+            ComparisonRule(
+              metricId: 'session_count',
+              operator: ComparisonOperator.greaterOrEqual,
+              target: 1,
+            ),
+          ]),
         ),
         throwsArgumentError,
       );
-      final pid = await db.insertExercisePlan(
-        name: 'x',
-        exerciseName: 'x',
-        category: ExerciseCategory.cardio,
-        metric: PlanMetric.sets,
-        minThreshold: 2,
-        regularThreshold: 3,
-      );
-      expect(
-        () => db.updateExercisePlan(
-          pid,
-          name: 'x',
-          exerciseName: 'x',
-          category: ExerciseCategory.cardio,
-          metric: PlanMetric.sets,
-          minThreshold: 5,
-          regularThreshold: 4,
-        ),
-        throwsArgumentError,
-      );
+      expect(await db.select(db.ruleSets).get(), isEmpty);
     });
 
-    test('startWorkout 关联方案：写入快照并预添加动作；幂等时不改关联', () async {
-      final pid = await db.insertExercisePlan(
-        name: '晨间步行',
-        exerciseName: '步行',
-        category: ExerciseCategory.cardio,
-        metric: PlanMetric.duration,
-        minThreshold: 900,
-        regularThreshold: 1800,
+    test('RuleSet 在关闭并重新打开数据库后仍可恢复', () async {
+      await db.close();
+      final directory = Directory.systemTemp.createTempSync(
+        'hoi-rule-persistence-',
       );
-      final plan = await planById(pid);
-      final w = await db.startWorkout(now: t0, plan: plan);
+      final file = File('${directory.path}/rules.sqlite');
+      try {
+        final first = AppDatabase(NativeDatabase(file));
+        await first.createRuleSet(
+          name: '每周三次',
+          period: RulePeriod.week,
+          effectiveFromDate: t0,
+          combineMode: RuleCombineMode.all,
+          expression: AllRule(const [
+            ComparisonRule(
+              metricId: 'session_count',
+              operator: ComparisonOperator.greaterOrEqual,
+              target: 3,
+            ),
+          ]),
+        );
+        await first.close();
 
-      // 快照写入 + 预添加绑定动作
-      expect(w.planId, pid);
-      expect(w.planName, '晨间步行');
-      expect(w.planExerciseName, '步行');
-      expect(w.planMetric, PlanMetric.duration);
-      expect(w.planMin, 900);
-      expect(w.planRegular, 1800);
-      final exercises = await db.getWorkoutExercises(w.id);
-      expect(exercises.single.name, '步行');
-      expect(exercises.single.category, ExerciseCategory.cardio);
-
-      // 已有进行中训练时幂等返回，不关联新方案
-      final pid2 = await db.insertExercisePlan(
-        name: '俯卧撑方案',
-        exerciseName: '俯卧撑',
-        category: ExerciseCategory.resistance,
-        metric: PlanMetric.sets,
-        minThreshold: 2,
-        regularThreshold: 3,
-      );
-      final w2 =
-          await db.startWorkout(now: t0, plan: await planById(pid2));
-      expect(w2.id, w.id);
-      expect((await workoutById(w.id)).planId, pid);
+        final second = AppDatabase(NativeDatabase(file));
+        final saved = (await second.watchRuleSets().first).single;
+        expect(saved.name, '每周三次');
+        expect(second.decodeRuleExpression(saved), isA<AllRule>());
+        await second.close();
+      } finally {
+        directory.deleteSync(recursive: true);
+      }
     });
   });
 }

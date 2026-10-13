@@ -6,6 +6,7 @@ import '../widgets/home_cards.dart';
 import '../widgets/home_workout_cards.dart';
 import '../widgets/week_strip.dart';
 import 'plans_screen.dart';
+import 'rules_screen.dart';
 
 /// 首页：行动入口优先，不使用悬浮按钮。
 /// 顺序：周条（选日期 + 本周落实点阵，非今天可回今天）→ 今日方案 →
@@ -29,9 +30,13 @@ class HomeScreen extends ConsumerWidget {
         title: const Text('Hoi'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const PlansScreen()),
-            ),
+            onPressed: () => Navigator.of(context)
+                .push(MaterialPageRoute(builder: (_) => const RulesScreen())),
+            child: const Text('目标'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context)
+                .push(MaterialPageRoute(builder: (_) => const PlansScreen())),
             child: const Text('方案'),
           ),
         ],
@@ -42,6 +47,8 @@ class HomeScreen extends ConsumerWidget {
           WeekStrip(date: date),
           const SizedBox(height: 12),
           const TodayPlanCard(),
+          const SizedBox(height: 12),
+          const RuleGoalsCard(),
           const SizedBox(height: 12),
           WorkoutEntryButtons(ongoing: ongoing, selectedDate: date),
           if (ongoingAsync.hasError)

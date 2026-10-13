@@ -12,17 +12,20 @@ import '../screens/workout_screen.dart';
 /// 「开始运动」仍代表从现在开始计时（归属今天，数据层已保证）。
 /// 已有进行中训练时隐藏「开始运动」，由进行中训练卡提供继续入口
 class WorkoutEntryButtons extends ConsumerWidget {
-  const WorkoutEntryButtons(
-      {super.key, required this.ongoing, required this.selectedDate});
+  const WorkoutEntryButtons({
+    super.key,
+    required this.ongoing,
+    required this.selectedDate,
+  });
 
   final Workout? ongoing;
   final DateTime selectedDate;
 
-  /// 开始训练：有方案时先选择「自由训练 / 各方案」，选方案则写入快照
+  /// 开始训练：有模板时先选择「自由训练 / 各模板」。
   Future<void> _startWorkout(BuildContext context, WidgetRef ref) async {
-    final plans = ref.read(exercisePlansProvider).value ?? [];
-    ExercisePlan? plan;
-    if (plans.isNotEmpty) {
+    final templates = ref.read(workoutTemplatesProvider).value ?? [];
+    TemplateVersion? templateVersion;
+    if (templates.isNotEmpty) {
       const free = Object(); // 哨兵：区分「自由训练」与「取消」
       final choice = await showDialog<Object?>(
         context: context,
@@ -33,22 +36,23 @@ class WorkoutEntryButtons extends ConsumerWidget {
               onPressed: () => Navigator.of(context).pop(free),
               child: const Text('自由训练（不关联方案）'),
             ),
-            for (final p in plans)
+            for (final summary in templates)
               SimpleDialogOption(
-                onPressed: () => Navigator.of(context).pop(p),
-                child: Text('${p.name}（${p.exerciseName}）'),
+                onPressed: () => Navigator.of(context).pop(summary.version),
+                child: Text(summary.version.name),
               ),
           ],
         ),
       );
       if (choice == null) return; // 用户取消
-      if (choice is ExercisePlan) plan = choice;
+      if (choice is TemplateVersion) templateVersion = choice;
     }
-    await ref.read(databaseProvider).startWorkout(plan: plan);
+    await ref
+        .read(databaseProvider)
+        .startWorkout(templateVersion: templateVersion);
     if (context.mounted) {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const WorkoutScreen()),
-      );
+      Navigator.of(context)
+          .push(MaterialPageRoute(builder: (_) => const WorkoutScreen()));
     }
   }
 
@@ -121,7 +125,7 @@ class OngoingWorkoutCard extends StatelessWidget {
     final subtitle = startedAt == null
         ? '计时信息缺失'
         : '开始于 ${DateFormat('HH:mm').format(startedAt)}'
-            '${workout.pausedAt != null ? ' · 已暂停' : ''}';
+              '${workout.pausedAt != null ? ' · 已暂停' : ''}';
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -133,19 +137,17 @@ class OngoingWorkoutCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('训练进行中',
-                      style: Theme.of(context).textTheme.titleSmall),
-                  Text(subtitle,
-                      style: Theme.of(context).textTheme.labelSmall),
+                  Text('训练进行中', style: Theme.of(context).textTheme.titleSmall),
+                  Text(subtitle, style: Theme.of(context).textTheme.labelSmall),
                 ],
               ),
             ),
             FilledButton.icon(
               icon: const Icon(Icons.play_arrow, size: 18),
               label: const Text('继续训练'),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const WorkoutScreen()),
-              ),
+              onPressed: () => Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const WorkoutScreen())),
             ),
           ],
         ),

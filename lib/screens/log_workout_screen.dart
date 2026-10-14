@@ -91,6 +91,8 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
   final _feelingController = TextEditingController();
   final List<_DraftExercise> _drafts = [];
   late DateTime _date;
+  DateTime? _startedAt;
+  DateTime? _endedAt;
 
   /// 关联的模板版本 id；null 表示不关联
   int? _selectedTemplateVersionId;
@@ -103,6 +105,20 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
     super.initState();
     final editing = widget.editing;
     _date = AppDatabase.dateOnly(editing?.date ?? widget.initialDate!);
+    if (editing != null) {
+      _startedAt = editing.startedAt;
+      _endedAt = editing.endedAt;
+    } else {
+      final now = ref.read(appClockProvider)();
+      _startedAt = DateTime(
+        _date.year,
+        _date.month,
+        _date.day,
+        now.hour,
+        now.minute,
+      );
+      _endedAt = _startedAt!.add(const Duration(hours: 1));
+    }
     _selectedTemplateVersionId = editing?.templateVersionId;
     final total = editing?.totalSeconds;
     if (total != null) {
@@ -130,6 +146,16 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
     return minutes == null ? null : (minutes * 60).round();
   }
 
+  int? get _effectiveTotalSeconds {
+    final entered = _parsedTotalSeconds;
+    if (entered != null) return entered;
+    final start = _startedAt;
+    final end = _endedAt;
+    return start == null || end == null
+        ? null
+        : end.difference(start).inSeconds;
+  }
+
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
@@ -137,7 +163,63 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
       firstDate: DateTime(2020),
       lastDate: DateTime.now().add(const Duration(days: 1)),
     );
-    if (picked != null) setState(() => _date = AppDatabase.dateOnly(picked));
+    if (picked == null) return;
+    final newDate = AppDatabase.dateOnly(picked);
+    final delta = newDate.difference(_date);
+    setState(() {
+      _date = newDate;
+      if (_startedAt != null) _startedAt = _startedAt!.add(delta);
+      if (_endedAt != null) _endedAt = _endedAt!.add(delta);
+    });
+  }
+
+  Future<void> _pickStartTime() async {
+    final current = _startedAt;
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: current == null
+          ? const TimeOfDay(hour: 18, minute: 0)
+          : TimeOfDay.fromDateTime(current),
+    );
+    if (picked == null) return;
+    final next = DateTime(
+      _date.year,
+      _date.month,
+      _date.day,
+      picked.hour,
+      picked.minute,
+    );
+    setState(() {
+      final oldStart = _startedAt;
+      final oldEnd = _endedAt;
+      _startedAt = next;
+      if (oldStart != null && oldEnd != null) {
+        _endedAt = next.add(oldEnd.difference(oldStart));
+      }
+    });
+  }
+
+  Future<void> _pickEndTime() async {
+    final current = _endedAt;
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: current == null
+          ? const TimeOfDay(hour: 19, minute: 0)
+          : TimeOfDay.fromDateTime(current),
+    );
+    if (picked == null) return;
+    var next = DateTime(
+      _date.year,
+      _date.month,
+      _date.day,
+      picked.hour,
+      picked.minute,
+    );
+    final start = _startedAt;
+    if (start != null && !next.isAfter(start)) {
+      next = next.add(const Duration(days: 1));
+    }
+    setState(() => _endedAt = next);
   }
 
   Future<void> _addExercise() async {
@@ -261,6 +343,18 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
 
   Future<void> _save() async {
     if (_saving) return;
+    final startedAt = _startedAt;
+    final endedAt = _endedAt;
+    if (startedAt == null || endedAt == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('请选择开始和结束时间')));
+      return;
+    }
+    if (!endedAt.isAfter(startedAt)) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('结束时间必须晚于开始时间')));
+      return;
+    }
     setState(() => _saving = true);
     final db = ref.read(databaseProvider);
     final messenger = ScaffoldMessenger.of(context);
@@ -275,7 +369,9 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
         savedId = widget.editing!.id;
         await db.updateWorkoutMeta(
           savedId,
-          totalSeconds: Value(_parsedTotalSeconds),
+          startedAt: startedAt,
+          endedAt: endedAt,
+          totalSeconds: Value(_effectiveTotalSeconds),
           feeling: Value(feeling.isEmpty ? null : feeling),
         );
         if (linkedVersion != null) {
@@ -292,8 +388,9 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
           return;
         }
         savedId = await db.insertCompletedWorkout(
-          date: _date,
-          totalSeconds: _parsedTotalSeconds,
+          startedAt: startedAt,
+          endedAt: endedAt,
+          totalSeconds: _effectiveTotalSeconds,
           feeling: feeling.isEmpty ? null : feeling,
         );
         for (final exercise in _drafts) {
@@ -385,21 +482,46 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
               children: [
                 Text('日期', style: Theme.of(context).textTheme.labelLarge),
                 const Spacer(),
-                if (_isEditing)
-                  Text(DateFormat('yyyy年M月d日').format(_date))
-                else
-                  TextButton.icon(
-                    icon: const Icon(Icons.calendar_today, size: 18),
-                    label: Text(DateFormat('yyyy年M月d日').format(_date)),
-                    onPressed: _pickDate,
+                TextButton.icon(
+                  icon: const Icon(Icons.calendar_today, size: 18),
+                  label: Text(DateFormat('yyyy年M月d日').format(_date)),
+                  onPressed: _pickDate,
+                ),
+              ],
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.play_arrow, size: 18),
+                    label: Text(
+                      _startedAt == null
+                          ? '开始时间'
+                          : DateFormat('HH:mm').format(_startedAt!),
+                    ),
+                    onPressed: _pickStartTime,
                   ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.stop, size: 18),
+                    label: Text(
+                      _endedAt == null
+                          ? '结束时间'
+                          : '${_endedAt!.day != _date.day ? '次日 ' : ''}'
+                                '${DateFormat('HH:mm').format(_endedAt!)}',
+                    ),
+                    onPressed: _pickEndTime,
+                  ),
+                ),
               ],
             ),
             TextField(
               controller: _minutesController,
               decoration: const InputDecoration(
-                labelText: '训练总用时（分钟，可留空）',
-                helperText: '留空表示用时未记录',
+                labelText: '训练总用时（分钟，可调整）',
+                helperText: '留空时使用开始至结束的时间跨度',
               ),
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,

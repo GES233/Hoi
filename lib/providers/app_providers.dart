@@ -13,6 +13,16 @@ final setStopwatchClockProvider = Provider<DateTime Function()>(
   (ref) => DateTime.now,
 );
 
+/// 全局可注入时钟；时间线测试通过 override 固定 now。
+final appClockProvider = Provider<DateTime Function()>((ref) => DateTime.now);
+
+/// 仅在有消费者时运行；时间线只在存在进行中训练时订阅。
+final minuteTickProvider = StreamProvider.autoDispose<DateTime>((ref) async* {
+  final clock = ref.watch(appClockProvider);
+  yield clock();
+  yield* Stream<DateTime>.periodic(const Duration(minutes: 1), (_) => clock());
+});
+
 /// 当前选中的日期（只含日期部分），默认今天
 class SelectedDateNotifier extends Notifier<DateTime> {
   @override
@@ -59,6 +69,22 @@ final completedWorkoutsProvider = StreamProvider.autoDispose<List<Workout>>((
 final weekWorkoutsProvider = StreamProvider.autoDispose<List<Workout>>((ref) {
   final date = ref.watch(selectedDateProvider);
   return ref.watch(databaseProvider).watchCompletedWorkoutsInWeek(date);
+});
+
+/// 选中日期所在自然周内有时间跨度的训练，包含跨日和进行中训练。
+final weekTimelineWorkoutsProvider = StreamProvider.autoDispose<List<Workout>>((
+  ref,
+) {
+  final selectedDate = ref.watch(selectedDateProvider);
+  final start = AppDatabase.weekStart(selectedDate);
+  return ref
+      .watch(databaseProvider)
+      .watchWorkoutsInTimeRange(start, start.add(const Duration(days: 7)));
+});
+
+final dailyCheckinProvider = StreamProvider.autoDispose<DailyCheckin?>((ref) {
+  final date = ref.watch(selectedDateProvider);
+  return ref.watch(databaseProvider).watchDailyCheckin(date);
 });
 
 /// 指定训练的动作列表

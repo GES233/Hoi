@@ -162,17 +162,25 @@ extension WorkoutDao on AppDatabase {
     });
   }
 
-  /// 补记：直接插入一场已完成训练（无开始/结束时间，date 归一化）
+  /// 补记：开始与结束时间是时间线的事实来源，归属日期取本地开始日期。
   Future<int> insertCompletedWorkout({
-    required DateTime date,
+    required DateTime startedAt,
+    required DateTime endedAt,
     int? totalSeconds,
     String? feeling,
   }) {
+    if (!endedAt.isAfter(startedAt)) {
+      throw ArgumentError('结束时间必须晚于开始时间');
+    }
     return into(workouts).insert(
       WorkoutsCompanion(
-        date: Value(AppDatabase.dateOnly(date)),
+        date: Value(AppDatabase.dateOnly(startedAt)),
         status: const Value(WorkoutStatus.completed),
-        totalSeconds: Value(totalSeconds),
+        startedAt: Value(startedAt),
+        endedAt: Value(endedAt),
+        totalSeconds: Value(
+          totalSeconds ?? endedAt.difference(startedAt).inSeconds,
+        ),
         feeling: Value(feeling),
       ),
     );
@@ -181,11 +189,24 @@ extension WorkoutDao on AppDatabase {
   /// 编辑已完成训练的元信息；用 [Value] 语义区分「不修改」与「清空」
   Future<void> updateWorkoutMeta(
     int id, {
+    DateTime? startedAt,
+    DateTime? endedAt,
     Value<int?>? totalSeconds,
     Value<String?>? feeling,
-  }) {
-    return (update(workouts)..where((t) => t.id.equals(id))).write(
+  }) async {
+    if ((startedAt == null) != (endedAt == null)) {
+      throw ArgumentError('开始和结束时间必须同时提供');
+    }
+    if (startedAt != null && !endedAt!.isAfter(startedAt)) {
+      throw ArgumentError('结束时间必须晚于开始时间');
+    }
+    await (update(workouts)..where((t) => t.id.equals(id))).write(
       WorkoutsCompanion(
+        date: startedAt == null
+            ? const Value.absent()
+            : Value(AppDatabase.dateOnly(startedAt)),
+        startedAt: startedAt == null ? const Value.absent() : Value(startedAt),
+        endedAt: endedAt == null ? const Value.absent() : Value(endedAt),
         totalSeconds: totalSeconds ?? const Value.absent(),
         feeling: feeling ?? const Value.absent(),
       ),
@@ -201,6 +222,21 @@ extension WorkoutDao on AppDatabase {
                   t.date.equals(AppDatabase.dateOnly(date)),
             )
             ..orderBy([(t) => OrderingTerm.asc(t.id)]))
+          .watch();
+
+  /// 监听与半开时间区间相交的训练；用于七天时间线，包含进行中训练。
+  Stream<List<Workout>> watchWorkoutsInTimeRange(
+    DateTime start,
+    DateTime endExclusive,
+  ) =>
+      (select(workouts)
+            ..where(
+              (row) =>
+                  row.startedAt.isNotNull() &
+                  row.startedAt.isSmallerThanValue(endExclusive) &
+                  (row.endedAt.isNull() | row.endedAt.isBiggerThanValue(start)),
+            )
+            ..orderBy([(row) => OrderingTerm.asc(row.startedAt)]))
           .watch();
 
   /// 监听所在周（周一至周日）的已完成训练

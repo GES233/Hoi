@@ -47,7 +47,10 @@ void main() {
       ProviderScope(
         overrides: [
           databaseProvider.overrideWithValue(db),
-          if (clock != null) setStopwatchClockProvider.overrideWithValue(clock),
+          if (clock != null) ...[
+            setStopwatchClockProvider.overrideWithValue(clock),
+            appClockProvider.overrideWithValue(clock),
+          ],
         ],
         child: const MaterialApp(home: HomeScreen()),
       ),
@@ -147,6 +150,48 @@ void main() {
     await finishTest(tester);
   });
 
+  testWidgets('首页展示每日状态与自然周运动时段', (tester) async {
+    final today = AppDatabase.dateOnly(DateTime.now());
+    await db.saveDailyCheckin(
+      today,
+      sleepRating: 4,
+      stressRating: 2,
+      note: '下午精神不错',
+    );
+    final startedAt = today.add(const Duration(hours: 18));
+    final endedAt = startedAt.add(const Duration(minutes: 45));
+    final workoutId = await db.insertCompletedWorkout(
+      startedAt: startedAt,
+      endedAt: endedAt,
+      totalSeconds: 2400,
+    );
+
+    await pumpHome(tester, clock: () => endedAt);
+
+    expect(find.text('每日状态'), findsOneWidget);
+    expect(find.text('睡眠 较好'), findsOneWidget);
+    expect(find.text('压力 较低'), findsOneWidget);
+    expect(find.text('下午精神不错'), findsOneWidget);
+    expect(find.text('运动时段'), findsOneWidget);
+
+    final dayIndex = today.weekday - 1;
+    await tester.tap(find.byKey(ValueKey('timeline-$workoutId-$dayIndex')));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('开始 ${DateFormat('M月d日 HH:mm').format(startedAt)}'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('结束 ${DateFormat('M月d日 HH:mm').format(endedAt)}'),
+      findsOneWidget,
+    );
+    expect(find.text('有效用时 40 分钟'), findsOneWidget);
+    await tester.tap(find.text('关闭'));
+    await tester.pumpAndSettle();
+
+    await finishTest(tester);
+  });
+
   testWidgets('周期目标表单校验不完整规则并持久化结构化规则', (tester) async {
     await pumpHome(tester);
     await tester.tap(find.text('目标'));
@@ -195,7 +240,8 @@ void main() {
       ),
     );
     final workoutId = await db.insertCompletedWorkout(
-      date: today,
+      startedAt: today.add(const Duration(hours: 8)),
+      endedAt: today.add(const Duration(hours: 8, minutes: 30)),
       totalSeconds: 1800,
     );
     await db.addWorkoutExercise(
@@ -303,7 +349,8 @@ void main() {
 
     // 一场训练含多个动作多组，次数仍只计 1
     final workoutId = await db.insertCompletedWorkout(
-      date: today,
+      startedAt: today.add(const Duration(hours: 18)),
+      endedAt: today.add(const Duration(hours: 18, minutes: 30)),
       totalSeconds: 1800,
     );
     final e1 = await db.addWorkoutExercise(
@@ -398,7 +445,7 @@ void main() {
     await finishTest(tester);
   });
 
-  testWidgets('补记不要求精确开始时间，日期默认选中日期', (tester) async {
+  testWidgets('补记默认选中日期并要求起止时间', (tester) async {
     await pumpHome(tester);
     final today = AppDatabase.dateOnly(DateTime.now());
     final yesterday = today.subtract(const Duration(days: 1));
@@ -408,13 +455,13 @@ void main() {
     await tester.tap(find.text('补记运动'));
     await tester.pumpAndSettle();
 
-    // 补记页只有日期（默认选中日期），没有精确开始时间字段
     expect(find.text('补记运动'), findsOneWidget); // AppBar 标题
     expect(
       find.text(DateFormat('yyyy年M月d日').format(yesterday)),
       findsOneWidget,
     );
-    expect(find.textContaining('开始时间'), findsNothing);
+    expect(find.byIcon(Icons.play_arrow), findsOneWidget);
+    expect(find.byIcon(Icons.stop), findsOneWidget);
 
     // 返回首页后再收尾：推入的路由未弹出时 db.close() 会挂起
     await tester.pageBack();
@@ -487,6 +534,12 @@ void main() {
     final exercises = await db.getWorkoutExercises(workouts.single.id);
     final sets = await db.getWorkoutSets(workouts.single.id);
     expect(workouts.single.status, WorkoutStatus.completed);
+    expect(workouts.single.startedAt, isNotNull);
+    expect(workouts.single.endedAt, isNotNull);
+    expect(
+      workouts.single.endedAt!.difference(workouts.single.startedAt!),
+      const Duration(hours: 1),
+    );
     expect(exercises.single.name, '散步');
     expect(sets.single.durationSeconds, 1200);
 
@@ -583,7 +636,8 @@ void main() {
     await pumpHome(tester);
     final today = AppDatabase.dateOnly(DateTime.now());
     final workoutId = await db.insertCompletedWorkout(
-      date: today,
+      startedAt: today.add(const Duration(hours: 10)),
+      endedAt: today.add(const Duration(hours: 10, minutes: 10)),
       totalSeconds: 600,
     );
     await db.addWorkoutExercise(

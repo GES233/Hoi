@@ -49,7 +49,8 @@ void main() {
 
   test('一场训练多个动作多组，日与周统计都只计 1 场', () async {
     final workoutId = await db.insertCompletedWorkout(
-      date: t0,
+      startedAt: t0,
+      endedAt: t0.add(const Duration(hours: 1)),
       totalSeconds: 3600,
     );
     final squat = await db.addWorkoutExercise(
@@ -71,7 +72,10 @@ void main() {
   });
 
   test('次数、时长、距离与扩展组事实均可保存', () async {
-    final workoutId = await db.insertCompletedWorkout(date: t0);
+    final workoutId = await db.insertCompletedWorkout(
+      startedAt: t0,
+      endedAt: t0.add(const Duration(minutes: 30)),
+    );
     final exerciseId = await db.addWorkoutExercise(
       workoutId,
       name: '综合训练',
@@ -164,7 +168,8 @@ void main() {
 
   test('updateWorkoutMeta 可修改并清空可空字段', () async {
     final workoutId = await db.insertCompletedWorkout(
-      date: t0,
+      startedAt: t0,
+      endedAt: t0.add(const Duration(minutes: 30)),
       totalSeconds: 1800,
       feeling: '轻松',
     );
@@ -174,6 +179,53 @@ void main() {
     final workout = await workoutById(workoutId);
     expect(workout.totalSeconds, isNull);
     expect(workout.feeling, '有点累');
+  });
+
+  test('每日状态可按日期保存、更新并在全部清空时删除', () async {
+    await db.saveDailyCheckin(
+      t0,
+      sleepRating: 4,
+      stressRating: 2,
+      note: '状态平稳',
+      now: t0,
+    );
+    var checkin = await db.watchDailyCheckin(t0).first;
+    expect(checkin?.sleepRating, 4);
+    expect(checkin?.stressRating, 2);
+    expect(checkin?.note, '状态平稳');
+
+    await db.saveDailyCheckin(
+      t0,
+      sleepRating: 5,
+      note: '  睡得很好  ',
+      now: t0.add(const Duration(hours: 1)),
+    );
+    checkin = await db.watchDailyCheckin(t0).first;
+    expect(checkin?.sleepRating, 5);
+    expect(checkin?.stressRating, isNull);
+    expect(checkin?.note, '睡得很好');
+
+    await db.saveDailyCheckin(t0, note: '   ');
+    expect(await db.watchDailyCheckin(t0).first, isNull);
+    expect(() => db.saveDailyCheckin(t0, sleepRating: 6), throwsArgumentError);
+  });
+
+  test('补记保存起止时间并按开始日期归属，拒绝反向区间', () async {
+    final end = t0.add(const Duration(days: 1, minutes: 30));
+    final workoutId = await db.insertCompletedWorkout(
+      startedAt: t0.add(const Duration(hours: 13, minutes: 30)),
+      endedAt: end,
+    );
+    final workout = await workoutById(workoutId);
+    expect(workout.date, AppDatabase.dateOnly(t0));
+    expect(workout.startedAt, t0.add(const Duration(hours: 13, minutes: 30)));
+    expect(workout.endedAt, end);
+    expect(workout.totalSeconds, 11 * 3600);
+
+    expect(
+      () => db.insertCompletedWorkout(startedAt: end, endedAt: t0),
+      throwsArgumentError,
+    );
   });
 
   test('首次打开会激活动作目录与每周基础运动预设', () async {
@@ -223,9 +275,9 @@ void main() {
     expect(await reopened.watchExercises().first, hasLength(exercises.length));
   });
 
-  test('v3 升到 v5 会重置旧表，第二次打开不会再次清空', () async {
+  test('v3 升到 v6 会重置旧表，第二次打开不会再次清空', () async {
     await db.close();
-    final directory = Directory.systemTemp.createTempSync('hoi-v5-reset-');
+    final directory = Directory.systemTemp.createTempSync('hoi-v6-reset-');
     addTearDown(() => directory.deleteSync(recursive: true));
     final file = File('${directory.path}/legacy.sqlite');
     final legacyTables = [
@@ -268,9 +320,9 @@ void main() {
     expect((await reopened.getExercise(exerciseId))?.name, '迁移后动作');
   });
 
-  test('v4 升到 v5 保留动作与规则，并移除旧周目标表', () async {
+  test('v4 升到 v6 保留动作与规则、移除旧周目标并建立每日状态表', () async {
     await db.close();
-    final directory = Directory.systemTemp.createTempSync('hoi-v5-migration-');
+    final directory = Directory.systemTemp.createTempSync('hoi-v6-migration-');
     addTearDown(() => directory.deleteSync(recursive: true));
     final file = File('${directory.path}/v4.sqlite');
     final migrated = AppDatabase.withOptions(
@@ -343,6 +395,8 @@ void main() {
     expect(exercise.builtinKey, isNull);
     expect(rule.name, '旧目标');
     expect(rule.presetKey, isNull);
+    await migrated.saveDailyCheckin(t0, sleepRating: 4);
+    expect((await migrated.watchDailyCheckin(t0).first)?.sleepRating, 4);
     final oldTable = await migrated
         .customSelect(
           "SELECT name FROM sqlite_master WHERE name = 'weekly_exercise_goals'",
@@ -670,7 +724,8 @@ void main() {
       );
       for (var i = 0; i < 3; i++) {
         final workoutId = await db.insertCompletedWorkout(
-          date: t0.add(Duration(days: i)),
+          startedAt: t0.add(Duration(days: i)),
+          endedAt: t0.add(Duration(days: i, minutes: 10)),
         );
         final exerciseId = await db.addWorkoutExercise(
           workoutId,
@@ -714,7 +769,10 @@ void main() {
     });
 
     test('编辑与归档规则不改训练事实，生效日期会过滤规则', () async {
-      final workoutId = await db.insertCompletedWorkout(date: t0);
+      final workoutId = await db.insertCompletedWorkout(
+        startedAt: t0,
+        endedAt: t0.add(const Duration(minutes: 30)),
+      );
       final original = AllRule(const [
         ComparisonRule(
           metricId: 'session_count',

@@ -6066,6 +6066,468 @@ class RestMarksCompanion extends UpdateCompanion<RestMark> {
   }
 }
 
+class $DailyCheckinsTable extends DailyCheckins
+    with TableInfo<$DailyCheckinsTable, DailyCheckin> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $DailyCheckinsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _dateMeta = const VerificationMeta('date');
+  @override
+  late final GeneratedColumn<DateTime> date = GeneratedColumn<DateTime>(
+    'date',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'),
+  );
+  static const VerificationMeta _sleepRatingMeta = const VerificationMeta(
+    'sleepRating',
+  );
+  @override
+  late final GeneratedColumn<int> sleepRating = GeneratedColumn<int>(
+    'sleep_rating',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _stressRatingMeta = const VerificationMeta(
+    'stressRating',
+  );
+  @override
+  late final GeneratedColumn<int> stressRating = GeneratedColumn<int>(
+    'stress_rating',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _noteMeta = const VerificationMeta('note');
+  @override
+  late final GeneratedColumn<String> note = GeneratedColumn<String>(
+    'note',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    date,
+    sleepRating,
+    stressRating,
+    note,
+    createdAt,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'daily_checkins';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<DailyCheckin> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('date')) {
+      context.handle(
+        _dateMeta,
+        date.isAcceptableOrUnknown(data['date']!, _dateMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_dateMeta);
+    }
+    if (data.containsKey('sleep_rating')) {
+      context.handle(
+        _sleepRatingMeta,
+        sleepRating.isAcceptableOrUnknown(
+          data['sleep_rating']!,
+          _sleepRatingMeta,
+        ),
+      );
+    }
+    if (data.containsKey('stress_rating')) {
+      context.handle(
+        _stressRatingMeta,
+        stressRating.isAcceptableOrUnknown(
+          data['stress_rating']!,
+          _stressRatingMeta,
+        ),
+      );
+    }
+    if (data.containsKey('note')) {
+      context.handle(
+        _noteMeta,
+        note.isAcceptableOrUnknown(data['note']!, _noteMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  DailyCheckin map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DailyCheckin(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      date: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}date'],
+      )!,
+      sleepRating: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sleep_rating'],
+      ),
+      stressRating: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}stress_rating'],
+      ),
+      note: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}note'],
+      ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $DailyCheckinsTable createAlias(String alias) {
+    return $DailyCheckinsTable(attachedDatabase, alias);
+  }
+}
+
+class DailyCheckin extends DataClass implements Insertable<DailyCheckin> {
+  final int id;
+  final DateTime date;
+  final int? sleepRating;
+  final int? stressRating;
+  final String? note;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  const DailyCheckin({
+    required this.id,
+    required this.date,
+    this.sleepRating,
+    this.stressRating,
+    this.note,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['date'] = Variable<DateTime>(date);
+    if (!nullToAbsent || sleepRating != null) {
+      map['sleep_rating'] = Variable<int>(sleepRating);
+    }
+    if (!nullToAbsent || stressRating != null) {
+      map['stress_rating'] = Variable<int>(stressRating);
+    }
+    if (!nullToAbsent || note != null) {
+      map['note'] = Variable<String>(note);
+    }
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    return map;
+  }
+
+  DailyCheckinsCompanion toCompanion(bool nullToAbsent) {
+    return DailyCheckinsCompanion(
+      id: Value(id),
+      date: Value(date),
+      sleepRating: sleepRating == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sleepRating),
+      stressRating: stressRating == null && nullToAbsent
+          ? const Value.absent()
+          : Value(stressRating),
+      note: note == null && nullToAbsent ? const Value.absent() : Value(note),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory DailyCheckin.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DailyCheckin(
+      id: serializer.fromJson<int>(json['id']),
+      date: serializer.fromJson<DateTime>(json['date']),
+      sleepRating: serializer.fromJson<int?>(json['sleepRating']),
+      stressRating: serializer.fromJson<int?>(json['stressRating']),
+      note: serializer.fromJson<String?>(json['note']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'date': serializer.toJson<DateTime>(date),
+      'sleepRating': serializer.toJson<int?>(sleepRating),
+      'stressRating': serializer.toJson<int?>(stressRating),
+      'note': serializer.toJson<String?>(note),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+    };
+  }
+
+  DailyCheckin copyWith({
+    int? id,
+    DateTime? date,
+    Value<int?> sleepRating = const Value.absent(),
+    Value<int?> stressRating = const Value.absent(),
+    Value<String?> note = const Value.absent(),
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) => DailyCheckin(
+    id: id ?? this.id,
+    date: date ?? this.date,
+    sleepRating: sleepRating.present ? sleepRating.value : this.sleepRating,
+    stressRating: stressRating.present ? stressRating.value : this.stressRating,
+    note: note.present ? note.value : this.note,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  DailyCheckin copyWithCompanion(DailyCheckinsCompanion data) {
+    return DailyCheckin(
+      id: data.id.present ? data.id.value : this.id,
+      date: data.date.present ? data.date.value : this.date,
+      sleepRating: data.sleepRating.present
+          ? data.sleepRating.value
+          : this.sleepRating,
+      stressRating: data.stressRating.present
+          ? data.stressRating.value
+          : this.stressRating,
+      note: data.note.present ? data.note.value : this.note,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DailyCheckin(')
+          ..write('id: $id, ')
+          ..write('date: $date, ')
+          ..write('sleepRating: $sleepRating, ')
+          ..write('stressRating: $stressRating, ')
+          ..write('note: $note, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    date,
+    sleepRating,
+    stressRating,
+    note,
+    createdAt,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DailyCheckin &&
+          other.id == this.id &&
+          other.date == this.date &&
+          other.sleepRating == this.sleepRating &&
+          other.stressRating == this.stressRating &&
+          other.note == this.note &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt);
+}
+
+class DailyCheckinsCompanion extends UpdateCompanion<DailyCheckin> {
+  final Value<int> id;
+  final Value<DateTime> date;
+  final Value<int?> sleepRating;
+  final Value<int?> stressRating;
+  final Value<String?> note;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> updatedAt;
+  const DailyCheckinsCompanion({
+    this.id = const Value.absent(),
+    this.date = const Value.absent(),
+    this.sleepRating = const Value.absent(),
+    this.stressRating = const Value.absent(),
+    this.note = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+  });
+  DailyCheckinsCompanion.insert({
+    this.id = const Value.absent(),
+    required DateTime date,
+    this.sleepRating = const Value.absent(),
+    this.stressRating = const Value.absent(),
+    this.note = const Value.absent(),
+    required DateTime createdAt,
+    required DateTime updatedAt,
+  }) : date = Value(date),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<DailyCheckin> custom({
+    Expression<int>? id,
+    Expression<DateTime>? date,
+    Expression<int>? sleepRating,
+    Expression<int>? stressRating,
+    Expression<String>? note,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? updatedAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (date != null) 'date': date,
+      if (sleepRating != null) 'sleep_rating': sleepRating,
+      if (stressRating != null) 'stress_rating': stressRating,
+      if (note != null) 'note': note,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+    });
+  }
+
+  DailyCheckinsCompanion copyWith({
+    Value<int>? id,
+    Value<DateTime>? date,
+    Value<int?>? sleepRating,
+    Value<int?>? stressRating,
+    Value<String?>? note,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+  }) {
+    return DailyCheckinsCompanion(
+      id: id ?? this.id,
+      date: date ?? this.date,
+      sleepRating: sleepRating ?? this.sleepRating,
+      stressRating: stressRating ?? this.stressRating,
+      note: note ?? this.note,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (date.present) {
+      map['date'] = Variable<DateTime>(date.value);
+    }
+    if (sleepRating.present) {
+      map['sleep_rating'] = Variable<int>(sleepRating.value);
+    }
+    if (stressRating.present) {
+      map['stress_rating'] = Variable<int>(stressRating.value);
+    }
+    if (note.present) {
+      map['note'] = Variable<String>(note.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DailyCheckinsCompanion(')
+          ..write('id: $id, ')
+          ..write('date: $date, ')
+          ..write('sleepRating: $sleepRating, ')
+          ..write('stressRating: $stressRating, ')
+          ..write('note: $note, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $RuleSetsTable extends RuleSets with TableInfo<$RuleSetsTable, RuleSet> {
   @override
   final GeneratedDatabase attachedDatabase;
@@ -6787,6 +7249,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   );
   late final $WorkoutSetsTable workoutSets = $WorkoutSetsTable(this);
   late final $RestMarksTable restMarks = $RestMarksTable(this);
+  late final $DailyCheckinsTable dailyCheckins = $DailyCheckinsTable(this);
   late final $RuleSetsTable ruleSets = $RuleSetsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
@@ -6804,6 +7267,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     workoutExercises,
     workoutSets,
     restMarks,
+    dailyCheckins,
     ruleSets,
   ];
   @override
@@ -11831,6 +12295,251 @@ typedef $$RestMarksTableProcessedTableManager =
       RestMark,
       PrefetchHooks Function()
     >;
+typedef $$DailyCheckinsTableCreateCompanionBuilder =
+    DailyCheckinsCompanion Function({
+      Value<int> id,
+      required DateTime date,
+      Value<int?> sleepRating,
+      Value<int?> stressRating,
+      Value<String?> note,
+      required DateTime createdAt,
+      required DateTime updatedAt,
+    });
+typedef $$DailyCheckinsTableUpdateCompanionBuilder =
+    DailyCheckinsCompanion Function({
+      Value<int> id,
+      Value<DateTime> date,
+      Value<int?> sleepRating,
+      Value<int?> stressRating,
+      Value<String?> note,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+    });
+
+class $$DailyCheckinsTableFilterComposer
+    extends Composer<_$AppDatabase, $DailyCheckinsTable> {
+  $$DailyCheckinsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get date => $composableBuilder(
+    column: $table.date,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sleepRating => $composableBuilder(
+    column: $table.sleepRating,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get stressRating => $composableBuilder(
+    column: $table.stressRating,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get note => $composableBuilder(
+    column: $table.note,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$DailyCheckinsTableOrderingComposer
+    extends Composer<_$AppDatabase, $DailyCheckinsTable> {
+  $$DailyCheckinsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get date => $composableBuilder(
+    column: $table.date,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sleepRating => $composableBuilder(
+    column: $table.sleepRating,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get stressRating => $composableBuilder(
+    column: $table.stressRating,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get note => $composableBuilder(
+    column: $table.note,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$DailyCheckinsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $DailyCheckinsTable> {
+  $$DailyCheckinsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get date =>
+      $composableBuilder(column: $table.date, builder: (column) => column);
+
+  GeneratedColumn<int> get sleepRating => $composableBuilder(
+    column: $table.sleepRating,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get stressRating => $composableBuilder(
+    column: $table.stressRating,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get note =>
+      $composableBuilder(column: $table.note, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$DailyCheckinsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $DailyCheckinsTable,
+          DailyCheckin,
+          $$DailyCheckinsTableFilterComposer,
+          $$DailyCheckinsTableOrderingComposer,
+          $$DailyCheckinsTableAnnotationComposer,
+          $$DailyCheckinsTableCreateCompanionBuilder,
+          $$DailyCheckinsTableUpdateCompanionBuilder,
+          (
+            DailyCheckin,
+            BaseReferences<_$AppDatabase, $DailyCheckinsTable, DailyCheckin>,
+          ),
+          DailyCheckin,
+          PrefetchHooks Function()
+        > {
+  $$DailyCheckinsTableTableManager(_$AppDatabase db, $DailyCheckinsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$DailyCheckinsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$DailyCheckinsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$DailyCheckinsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<DateTime> date = const Value.absent(),
+                Value<int?> sleepRating = const Value.absent(),
+                Value<int?> stressRating = const Value.absent(),
+                Value<String?> note = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+              }) => DailyCheckinsCompanion(
+                id: id,
+                date: date,
+                sleepRating: sleepRating,
+                stressRating: stressRating,
+                note: note,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required DateTime date,
+                Value<int?> sleepRating = const Value.absent(),
+                Value<int?> stressRating = const Value.absent(),
+                Value<String?> note = const Value.absent(),
+                required DateTime createdAt,
+                required DateTime updatedAt,
+              }) => DailyCheckinsCompanion.insert(
+                id: id,
+                date: date,
+                sleepRating: sleepRating,
+                stressRating: stressRating,
+                note: note,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$DailyCheckinsTable, DailyCheckin>(table),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $DailyCheckinsTable,
+                    DailyCheckin
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$DailyCheckinsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $DailyCheckinsTable,
+      DailyCheckin,
+      $$DailyCheckinsTableFilterComposer,
+      $$DailyCheckinsTableOrderingComposer,
+      $$DailyCheckinsTableAnnotationComposer,
+      $$DailyCheckinsTableCreateCompanionBuilder,
+      $$DailyCheckinsTableUpdateCompanionBuilder,
+      (
+        DailyCheckin,
+        BaseReferences<_$AppDatabase, $DailyCheckinsTable, DailyCheckin>,
+      ),
+      DailyCheckin,
+      PrefetchHooks Function()
+    >;
 typedef $$RuleSetsTableCreateCompanionBuilder = RuleSetsCompanion Function({
   Value<int> id,
   Value<String?> presetKey,
@@ -12181,6 +12890,8 @@ class $AppDatabaseManager {
       $$WorkoutSetsTableTableManager(_db, _db.workoutSets);
   $$RestMarksTableTableManager get restMarks =>
       $$RestMarksTableTableManager(_db, _db.restMarks);
+  $$DailyCheckinsTableTableManager get dailyCheckins =>
+      $$DailyCheckinsTableTableManager(_db, _db.dailyCheckins);
   $$RuleSetsTableTableManager get ruleSets =>
       $$RuleSetsTableTableManager(_db, _db.ruleSets);
 }

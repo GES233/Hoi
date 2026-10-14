@@ -16,6 +16,7 @@ part 'daos/exercise_catalog_dao.dart';
 part 'daos/template_dao.dart';
 part 'daos/rule_dao.dart';
 part 'daos/daily_status_dao.dart';
+part 'daos/daily_checkin_dao.dart';
 
 /// 餐次类型
 enum MealType { breakfast, lunch, dinner, snack }
@@ -388,6 +389,17 @@ class RestMarks extends Table {
   TextColumn get note => text().nullable()();
 }
 
+/// 每日主观状态与自由备注；评分使用 1–5，字段均可单独留空。
+class DailyCheckins extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  DateTimeColumn get date => dateTime().unique()();
+  IntColumn get sleepRating => integer().nullable()();
+  IntColumn get stressRating => integer().nullable()();
+  TextColumn get note => text().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+}
+
 /// 日／周周期目标；表达式使用受控 Rule AST JSON，不执行任意代码。
 class RuleSets extends Table {
   IntColumn get id => integer().autoIncrement()();
@@ -416,6 +428,7 @@ class RuleSets extends Table {
     WorkoutExercises,
     WorkoutSets,
     RestMarks,
+    DailyCheckins,
     RuleSets,
   ],
 )
@@ -432,7 +445,7 @@ class AppDatabase extends _$AppDatabase {
   static QueryExecutor _openConnection() => driftDatabase(name: 'hoi_tracker');
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -453,10 +466,15 @@ class AppDatabase extends _$AppDatabase {
           await m.deleteTable(table);
         }
         await m.createAll();
-      } else if (from < 5) {
+        return;
+      }
+      if (from < 5) {
         await m.addColumn(exercises, exercises.builtinKey);
         await m.addColumn(ruleSets, ruleSets.presetKey);
         await m.deleteTable('weekly_exercise_goals');
+      }
+      if (from < 6) {
+        await m.createTable(dailyCheckins);
       }
     },
     beforeOpen: (_) async {
@@ -611,7 +629,7 @@ class AppDatabase extends _$AppDatabase {
           (s.distanceMeters ?? 0) > 0);
 
   /// 当前已计时的秒数：now - startedAt - 已暂停秒数 - 正在暂停的这一段；
-  /// startedAt 为空（补记）时返回 0。权威数据在数据库，UI 只负责显示
+  /// startedAt 为空（异常或旧数据）时返回 0。权威数据在数据库，UI 只负责显示
   static int elapsedSeconds(Workout w, {DateTime? now}) {
     final startedAt = w.startedAt;
     if (startedAt == null) return 0;

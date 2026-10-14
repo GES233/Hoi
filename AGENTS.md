@@ -33,15 +33,19 @@ lib/
 │   ├── database.dart            # drift 表定义、迁移、共享静态 API（database.g.dart 为生成文件，勿手改）
 │   └── daos/                    # 按饮食、训练、动作、模板、规则、每日状态拆分的兼容式 DAO extension
 ├── providers/app_providers.dart # riverpod providers（databaseProvider / selectedDateProvider / 可注入时钟与按分钟 tick / 各 StreamProvider）
-├── screens/home_screen.dart     # 首页（组装者）：周条、今日方案、周期目标、开始/补记入口、训练记录、饮食和本周事实概览；无 FAB
+├── screens/home_screen.dart     # 首页（组装者）：周条、每日状态、今日方案、开始/补记入口、进行中训练、当日记录、饮食摘要、周进度入口；无 FAB
 ├── screens/workout_screen.dart  # 进行中训练页（组装者）：顶部紧凑总用时行 + 暂停训练/继续训练/结束训练；组级小秒表计时只存内存、全场至多一组在计时；放弃训练/删除动作收进 ⋮ 菜单且有确认；进度卡与动作卡实现拆在 widgets/
 ├── screens/log_workout_screen.dart # 补记与编辑已完成训练（补记时动组本地暂存、保存时一次写入；编辑模式组可点按编辑；可关联/取消方案）
+├── screens/week_progress_screen.dart # 周进度页（只读）：本周日期格 + 状态点图例 + 运动时段 + 周期目标；不选择日期，避免改动全局选中日期
 ├── screens/plans_screen.dart       # 训练模板管理；当前 UI 为单动作快捷编辑器，底层支持不可变多动作版本
 ├── screens/rules_screen.dart       # 周期目标列表、结构化规则编辑器与内置预设激活
-└── widgets/                     # 首页/训练卡片、周条、饮食对话框、动作目录选择与组录入、小秒表等组件
+└── widgets/                     # 首页/训练卡片、周条与日期格（WeekDayRow/StatusDot/WeekStatusLegend）、周进度入口、饮食对话框、动作目录选择与组录入、小秒表等组件
 test/widget_test.dart            # 首页 widget 测试（内存数据库 + provider override）
 test/database_test.dart          # 训练记录数据库测试（NativeDatabase.memory()，注入固定 now）
 test/set_stopwatch_test.dart     # 组级秒表纯 Dart 测试（注入假时钟）
+test/workout_timeline_test.dart  # 时间线条带纯 Dart 测试（跨日裁切与 lane 分配）
+test/workout_dialogs_test.dart   # 已记录用时的统一显示口径测试（formatRecordedSeconds）
+test/rule_evaluator_test.dart    # 规则 AST 与评估器纯 Dart 测试
 ```
 
 ## 数据库

@@ -150,7 +150,12 @@ void main() {
     await finishTest(tester);
   });
 
-  testWidgets('首页展示每日状态与自然周运动时段', (tester) async {
+  testWidgets('首页紧凑展示每日状态并从回顾入口查看运动时段', (tester) async {
+    Future<void> pumpFrames() async {
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+    }
+
     final today = AppDatabase.dateOnly(DateTime.now());
     await db.saveDailyCheckin(
       today,
@@ -168,15 +173,19 @@ void main() {
 
     await pumpHome(tester, clock: () => endedAt);
 
-    expect(find.text('每日状态'), findsOneWidget);
-    expect(find.text('睡眠 较好'), findsOneWidget);
-    expect(find.text('压力 较低'), findsOneWidget);
-    expect(find.text('下午精神不错'), findsOneWidget);
+    expect(find.text('睡眠 较好 · 压力 较低 · 下午精神不错'), findsOneWidget);
+    expect(find.text('本周回顾'), findsOneWidget);
+    expect(find.text('1 次 · 已记录 40 分钟'), findsOneWidget);
+    expect(find.text('运动时段'), findsNothing);
+
+    await tester.tap(find.text('本周回顾'));
+    await pumpFrames();
     expect(find.text('运动时段'), findsOneWidget);
+    expect(find.byTooltip('展开完整时间轴'), findsOneWidget);
 
     final dayIndex = today.weekday - 1;
     await tester.tap(find.byKey(ValueKey('timeline-$workoutId-$dayIndex')));
-    await tester.pumpAndSettle();
+    await pumpFrames();
     expect(
       find.text('开始 ${DateFormat('M月d日 HH:mm').format(startedAt)}'),
       findsOneWidget,
@@ -187,9 +196,13 @@ void main() {
     );
     expect(find.text('有效用时 40 分钟'), findsOneWidget);
     await tester.tap(find.text('关闭'));
-    await tester.pumpAndSettle();
-
-    await finishTest(tester);
+    await pumpFrames();
+    await tester.pageBack();
+    await pumpFrames();
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    await tester.runAsync(db.close);
+    dbClosed = true;
   });
 
   testWidgets('周期目标表单校验不完整规则并持久化结构化规则', (tester) async {
@@ -221,9 +234,9 @@ void main() {
     await tester.pageBack();
     await tester.pumpAndSettle();
     expect(find.text('今日方案'), findsOneWidget);
-    expect(find.text('周期目标'), findsOneWidget);
-    expect(find.text('每周训练三次'), findsOneWidget);
-    expect(find.text('未开始'), findsOneWidget);
+    expect(find.text('周期目标'), findsNothing);
+    expect(find.text('每周训练三次'), findsNothing);
+    expect(find.text('本周回顾'), findsOneWidget);
     await finishTest(tester);
   });
 
@@ -341,11 +354,15 @@ void main() {
     );
     await pumpHome(tester);
 
-    // 周期目标来自可编辑的 RuleSet 预设，周卡只显示本周事实概览。
+    // 首页只保留紧凑回顾入口，完整时间线和目标在回顾页。
+    expect(find.text('本周回顾'), findsOneWidget);
+    expect(find.text('0 次 · 已记录 0 分钟'), findsOneWidget);
+    expect(find.text('每周基础运动'), findsNothing);
+    await tester.tap(find.text('本周回顾'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
     expect(find.text('每周基础运动'), findsOneWidget);
     expect(find.text('0/3 次 · 0/90 分钟'), findsOneWidget);
-    expect(find.text('本周运动'), findsOneWidget);
-    expect(find.text('0 次 · 已记录 0 分钟'), findsOneWidget);
 
     // 一场训练含多个动作多组，次数仍只计 1
     final workoutId = await db.insertCompletedWorkout(
@@ -369,7 +386,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('1/3 次 · 30/90 分钟'), findsOneWidget);
-    expect(find.text('1 次 · 已记录 30 分钟'), findsOneWidget);
 
     // 激活后的预设是普通 RuleSet，可以按用户需要修改。
     final rule = (await db.select(db.ruleSets).get()).single;
@@ -394,8 +410,13 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('1/5 次 · 30/120 分钟'), findsOneWidget);
-
-    await finishTest(tester);
+    await tester.pageBack();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    await tester.runAsync(db.close);
+    dbClosed = true;
   });
 
   testWidgets('有进行中训练时展示继续训练入口', (tester) async {

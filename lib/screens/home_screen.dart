@@ -6,7 +6,7 @@ import '../widgets/home_cards.dart';
 import '../widgets/home_workout_cards.dart';
 import '../widgets/daily_checkin_card.dart';
 import '../widgets/week_strip.dart';
-import '../widgets/workout_timeline_card.dart';
+import '../widgets/weekly_review_entry.dart';
 import 'exercises_screen.dart';
 import 'plans_screen.dart';
 import 'rules_screen.dart';
@@ -14,7 +14,7 @@ import 'rules_screen.dart';
 /// 首页：行动入口优先，不使用悬浮按钮。
 /// 顺序：周条（选日期 + 本周落实点阵，非今天可回今天）→ 每日状态 → 今日方案 →
 /// 开始/补记/单项入口 → 进行中的训练（与选中日期无关）→ 当日运动记录 →
-/// 饮食入口与摘要 → 周运动时段 → 本周概览（次数/时长进度 + 点阵图例）
+/// 饮食入口与摘要 → 紧凑本周回顾入口
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -59,8 +59,6 @@ class HomeScreen extends ConsumerWidget {
           const SizedBox(height: 12),
           const TodayPlanCard(),
           const SizedBox(height: 12),
-          const RuleGoalsCard(),
-          const SizedBox(height: 12),
           WorkoutEntryButtons(ongoing: ongoing, selectedDate: date),
           if (ongoingAsync.hasError)
             const Padding(
@@ -76,9 +74,7 @@ class HomeScreen extends ConsumerWidget {
           const SizedBox(height: 12),
           FoodSection(entriesAsync: foodAsync),
           const SizedBox(height: 12),
-          const WorkoutTimelineCard(),
-          const SizedBox(height: 12),
-          const WeeklyExerciseCard(),
+          const WeeklyReviewEntry(),
         ],
       ),
     );

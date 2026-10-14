@@ -126,74 +126,55 @@ class DailyCheckinCard extends ConsumerWidget {
     final date = ref.watch(selectedDateProvider);
     final checkinAsync = ref.watch(dailyCheckinProvider);
     final checkin = checkinAsync.value;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text('每日状态', style: Theme.of(context).textTheme.titleMedium),
-                const Spacer(),
-                IconButton(
-                  tooltip: checkin == null ? '记录每日状态' : '编辑每日状态',
-                  icon: Icon(checkin == null ? Icons.add : Icons.edit_outlined),
-                  onPressed: checkinAsync.hasError
-                      ? null
-                      : () => _edit(context, ref, date, checkin),
+    final scheme = Theme.of(context).colorScheme;
+    final details = <String>[
+      if (checkin?.sleepRating != null)
+        '睡眠 ${_sleepLabel(checkin!.sleepRating!)}',
+      if (checkin?.stressRating != null)
+        '压力 ${_stressLabel(checkin!.stressRating!)}',
+      if (checkin?.note != null) checkin!.note!,
+    ];
+    final subtitle = checkinAsync.hasError
+        ? '每日状态加载失败'
+        : !checkinAsync.hasValue
+        ? '加载中…'
+        : details.isEmpty
+        ? '记录睡眠、压力或备注'
+        : details.join(' · ');
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: checkinAsync.hasError
+            ? null
+            : () => _edit(context, ref, date, checkin),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          child: Row(
+            children: [
+              Icon(Icons.bedtime_outlined, size: 19, color: scheme.primary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: details.isEmpty
+                        ? scheme.onSurfaceVariant
+                        : scheme.onSurface,
+                  ),
                 ),
-              ],
-            ),
-            if (checkinAsync.hasError)
-              const Text('每日状态加载失败')
-            else if (!checkinAsync.hasValue)
-              const Text('加载中…')
-            else if (checkin == null)
-              Text(
-                '尚未记录',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              )
-            else ...[
-              Wrap(
-                spacing: 16,
-                runSpacing: 8,
-                children: [
-                  if (checkin.sleepRating != null)
-                    _Fact(
-                      icon: Icons.bedtime_outlined,
-                      label: '睡眠 ${_sleepLabel(checkin.sleepRating!)}',
-                    ),
-                  if (checkin.stressRating != null)
-                    _Fact(
-                      icon: Icons.psychology_outlined,
-                      label: '压力 ${_stressLabel(checkin.stressRating!)}',
-                    ),
-                ],
               ),
-              if (checkin.note != null) ...[
-                const SizedBox(height: 8),
-                Text(checkin.note!),
-              ],
+              Icon(
+                checkin == null ? Icons.add : Icons.edit_outlined,
+                size: 18,
+                color: scheme.onSurfaceVariant,
+              ),
             ],
-          ],
+          ),
         ),
       ),
     );
   }
-}
-
-class _Fact extends StatelessWidget {
-  const _Fact({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [Icon(icon, size: 18), const SizedBox(width: 6), Text(label)],
-  );
 }

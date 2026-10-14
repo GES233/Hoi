@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
 import '../database/database.dart';
 import '../domain/rules/rule_evaluator.dart';
@@ -8,7 +7,6 @@ import '../providers/app_providers.dart';
 import '../screens/plans_screen.dart';
 import '../screens/rules_screen.dart';
 import 'add_entry_dialogs.dart';
-import 'week_strip.dart';
 
 /// 「今日方案」卡片：各方案阈值与选中日期状态、休息标记入口
 class TodayPlanCard extends ConsumerWidget {
@@ -398,94 +396,4 @@ class FoodSection extends ConsumerWidget {
         ),
     ];
   }
-}
-
-/// 本周运动概览 + 点阵图例（目标统一由上方 RuleSet 卡片负责）。
-/// 时长只累计已记录总用时的训练，未知用时不推算。
-class WeeklyExerciseCard extends ConsumerWidget {
-  const WeeklyExerciseCard({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final date = ref.watch(selectedDateProvider);
-    final weekAsync = ref.watch(weekWorkoutsProvider);
-
-    final weekStart = AppDatabase.weekStart(date);
-    final weekEnd = weekStart.add(const Duration(days: 6));
-    final weekWorkouts = weekAsync.value ?? [];
-    final totalSeconds = weekWorkouts.fold<int>(
-      0,
-      (sum, w) => sum + (w.totalSeconds ?? 0),
-    );
-    final totalMinutes = totalSeconds ~/ 60;
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text('本周运动', style: Theme.of(context).textTheme.titleMedium),
-              ],
-            ),
-            Text(
-              '${DateFormat('M月d日').format(weekStart)} – '
-              '${DateFormat('M月d日').format(weekEnd)}',
-              style: Theme.of(context).textTheme.labelSmall,
-            ),
-            // 加载 / 错误 / 数据 分开呈现
-            if (weekAsync.hasError)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
-                child: Text('本周统计加载失败'),
-              )
-            else if (!weekAsync.hasValue)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
-                child: Text('加载中…'),
-              )
-            else ...[
-              const SizedBox(height: 12),
-              Text(
-                '${weekWorkouts.length} 次 · 已记录 $totalMinutes 分钟',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 12),
-              // 顶部周条点阵的图例
-              Wrap(
-                spacing: 12,
-                runSpacing: 4,
-                children: [
-                  _legendItem(context, DailyStatus.none, '无记录'),
-                  _legendItem(context, DailyStatus.recorded, '有记录'),
-                  _legendItem(context, DailyStatus.minDone, '最低达标'),
-                  _legendItem(context, DailyStatus.regularDone, '常规达标'),
-                  _legendItem(context, DailyStatus.rest, '休息'),
-                ],
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  static Widget _legendItem(
-    BuildContext context,
-    DailyStatus status,
-    String label,
-  ) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      SizedBox(
-        width: 14,
-        height: 14,
-        child: Center(child: StatusDot(status: status)),
-      ),
-      const SizedBox(width: 4),
-      Text(label, style: Theme.of(context).textTheme.labelSmall),
-    ],
-  );
 }

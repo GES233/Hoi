@@ -7,7 +7,7 @@ import '../providers/app_providers.dart';
 import '../screens/log_workout_screen.dart';
 import '../screens/workout_screen.dart';
 
-/// 「开始运动」与「补记运动」入口。
+/// 「开始运动」、「补记运动」与单项运动入口。
 /// 选中今天时「开始运动」为主按钮；查看历史日期时「补记运动」为主按钮，
 /// 「开始运动」仍代表从现在开始计时（归属今天，数据层已保证）。
 /// 已有进行中训练时隐藏「开始运动」，由进行中训练卡提供继续入口
@@ -101,6 +101,20 @@ class WorkoutEntryButtons extends ConsumerWidget {
             ],
             Expanded(child: logButton),
           ],
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: TextButton.icon(
+            icon: const Icon(Icons.add),
+            label: const Text('记录单项运动'),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) =>
+                    LogWorkoutScreen.singleExercise(initialDate: selectedDate),
+              ),
+            ),
+          ),
         ),
         if (!isToday && ongoing == null)
           Text(

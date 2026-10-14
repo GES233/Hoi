@@ -123,12 +123,13 @@ void main() {
     );
   }
 
-  testWidgets('首页展示开始与补记入口，无悬浮按钮与净热量', (tester) async {
+  testWidgets('首页展示开始、补记与单项入口，无悬浮按钮与净热量', (tester) async {
     await pumpHome(tester);
 
     expect(find.text(HomeScreen.formatDate(DateTime.now())), findsOneWidget);
     expect(find.text('开始运动'), findsOneWidget);
     expect(find.text('补记运动'), findsOneWidget);
+    expect(find.text('记录单项运动'), findsOneWidget);
     expect(find.text('添加饮食'), findsOneWidget);
     // 入口全部在内容流内，不使用悬浮按钮
     expect(find.byType(FloatingActionButton), findsNothing);
@@ -418,6 +419,76 @@ void main() {
     // 返回首页后再收尾：推入的路由未弹出时 db.close() 会挂起
     await tester.pageBack();
     await tester.pumpAndSettle();
+
+    await finishTest(tester);
+  });
+
+  testWidgets('可新增运动类型并在动作库中编辑', (tester) async {
+    await pumpHome(tester);
+
+    await tester.tap(find.text('动作'));
+    await tester.pumpAndSettle();
+    expect(find.text('运动类型'), findsOneWidget);
+
+    await tester.tap(find.text('添加运动类型'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextFormField, '运动名称'), '羽毛球');
+    await tester.tap(find.widgetWithText(FilledButton, '添加'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('羽毛球'), findsOneWidget);
+    expect(find.text('心肺 · 按时长记录'), findsOneWidget);
+    var exercises = await db.getExercises();
+    expect(exercises.single.name, '羽毛球');
+
+    await tester.tap(find.text('羽毛球'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextFormField, '运动名称'), '双打羽毛球');
+    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('双打羽毛球'), findsOneWidget);
+    exercises = await db.getExercises();
+    expect(exercises.single.name, '双打羽毛球');
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    await finishTest(tester);
+  });
+
+  testWidgets('可单独记录一个运动并保存为当日记录', (tester) async {
+    await pumpHome(tester);
+
+    await tester.tap(find.text('记录单项运动'));
+    await tester.pumpAndSettle();
+    expect(find.text('记录单项运动'), findsOneWidget);
+    expect(find.text('关联方案（可选）'), findsNothing);
+
+    await tester.tap(find.text('选择运动'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextFormField, '动作名称'), '散步');
+    await tester.tap(find.widgetWithText(FilledButton, '添加'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('散步'), findsOneWidget);
+    expect(find.text('选择运动'), findsNothing);
+    await tester.tap(find.text('添加组'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, '持续秒数（可选）'), '1200');
+    await tester.tap(find.widgetWithText(FilledButton, '添加'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存记录'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('运动记录'), findsOneWidget);
+    expect(find.text('散步'), findsOneWidget);
+    final workouts = await db.select(db.workouts).get();
+    final exercises = await db.getWorkoutExercises(workouts.single.id);
+    final sets = await db.getWorkoutSets(workouts.single.id);
+    expect(workouts.single.status, WorkoutStatus.completed);
+    expect(exercises.single.name, '散步');
+    expect(sets.single.durationSeconds, 1200);
 
     await finishTest(tester);
   });

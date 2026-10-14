@@ -12,17 +12,26 @@ import '../widgets/workout_dialogs.dart';
 /// 编辑模式：动作与组实时写库，总用时与感受点保存时更新。
 class LogWorkoutScreen extends ConsumerStatefulWidget {
   const LogWorkoutScreen({super.key, required this.initialDate})
-    : editing = null;
+    : editing = null,
+      singleExercise = false;
+
+  const LogWorkoutScreen.singleExercise({super.key, required this.initialDate})
+    : editing = null,
+      singleExercise = true;
 
   const LogWorkoutScreen.editing({super.key, required Workout workout})
     : editing = workout,
-      initialDate = null;
+      initialDate = null,
+      singleExercise = false;
 
   /// 补记模式的初始日期（通常为首页选中日期）
   final DateTime? initialDate;
 
   /// 编辑模式下被编辑的已完成训练
   final Workout? editing;
+
+  /// 单项模式只记录一个动作，不关联训练方案。
+  final bool singleExercise;
 
   @override
   ConsumerState<LogWorkoutScreen> createState() => _LogWorkoutScreenState();
@@ -334,7 +343,15 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(_isEditing ? '编辑训练' : '补记运动')),
+      appBar: AppBar(
+        title: Text(
+          _isEditing
+              ? '编辑训练'
+              : widget.singleExercise
+              ? '记录单项运动'
+              : '补记运动',
+        ),
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -342,15 +359,16 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
           const SizedBox(height: 12),
           if (_isEditing) ..._buildLiveExercises() else ..._buildDrafts(),
           const SizedBox(height: 8),
-          OutlinedButton.icon(
-            icon: const Icon(Icons.add),
-            label: const Text('添加动作'),
-            onPressed: _addExercise,
-          ),
+          if (!widget.singleExercise || _drafts.isEmpty)
+            OutlinedButton.icon(
+              icon: const Icon(Icons.add),
+              label: Text(widget.singleExercise ? '选择运动' : '添加动作'),
+              onPressed: _addExercise,
+            ),
           const SizedBox(height: 16),
           FilledButton(
             onPressed: _saving ? null : _save,
-            child: const Text('保存'),
+            child: Text(widget.singleExercise ? '保存记录' : '保存'),
           ),
         ],
       ),
@@ -391,7 +409,7 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
               controller: _feelingController,
               decoration: const InputDecoration(labelText: '感受（可选）'),
             ),
-            _buildPlanDropdown(),
+            if (!widget.singleExercise) _buildPlanDropdown(),
           ],
         ),
       ),

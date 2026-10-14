@@ -13,6 +13,19 @@ String formatElapsed(int seconds) {
   return h > 0 ? '$h:$mm:$ss' : '$mm:$ss';
 }
 
+/// 训练已记录用时（秒）的统一显示口径，供首页、运动时段与周进度共用。
+/// 非零但不足一分钟单独说清楚；整分钟不带小数，否则保留一位，
+/// 避免同一场训练在不同页面显示成不同的数。
+String formatRecordedSeconds(int seconds) {
+  if (seconds <= 0) return '0 分钟';
+  if (seconds < 60) return '不足 1 分钟';
+  // 用十分之一分钟为单位取整，避免 61 秒显示成「1.0 分钟」
+  final tenths = (seconds / 6).round();
+  return tenths % 10 == 0
+      ? '${tenths ~/ 10} 分钟'
+      : '${(tenths / 10).toStringAsFixed(1)} 分钟';
+}
+
 /// 组的简要描述：次数 / 时长 / 重量 / 备注
 String describeSet(WorkoutSet s) {
   final parts = <String>[];

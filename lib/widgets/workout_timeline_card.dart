@@ -5,6 +5,7 @@ import 'package:intl/intl.dart' as intl;
 import '../database/database.dart';
 import '../domain/workout_timeline.dart';
 import '../providers/app_providers.dart';
+import 'workout_dialogs.dart';
 
 class WorkoutTimelineCard extends ConsumerStatefulWidget {
   const WorkoutTimelineCard({super.key});
@@ -133,40 +134,38 @@ class _WorkoutTimeline extends StatelessWidget {
     _ => scheme.secondary,
   };
 
-  Future<void> _showDetails(BuildContext context, WorkoutTimelineEntry entry) =>
-      showDialog<void>(
-        context: context,
-        builder: (context) {
-          final end = entry.endedAt;
-          final seconds = entry.totalSeconds;
-          final duration = seconds == null ? null : Duration(seconds: seconds);
-          final minutes = duration?.inMinutes;
-          return AlertDialog(
-            title: Text(entry.label),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '开始 ${intl.DateFormat('M月d日 HH:mm').format(entry.startedAt)}',
-                ),
-                Text(
-                  end == null
-                      ? '结束 进行中'
-                      : '结束 ${intl.DateFormat('M月d日 HH:mm').format(end)}',
-                ),
-                if (minutes != null) Text('有效用时 $minutes 分钟'),
-              ],
+  Future<void> _showDetails(
+    BuildContext context,
+    WorkoutTimelineEntry entry,
+  ) => showDialog<void>(
+    context: context,
+    builder: (context) {
+      final end = entry.endedAt;
+      final seconds = entry.totalSeconds;
+      return AlertDialog(
+        title: Text(entry.label),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('开始 ${intl.DateFormat('M月d日 HH:mm').format(entry.startedAt)}'),
+            Text(
+              end == null
+                  ? '结束 进行中'
+                  : '结束 ${intl.DateFormat('M月d日 HH:mm').format(end)}',
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('关闭'),
-              ),
-            ],
-          );
-        },
+            if (seconds != null) Text('有效用时 ${formatRecordedSeconds(seconds)}'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('关闭'),
+          ),
+        ],
       );
+    },
+  );
 
   @override
   Widget build(BuildContext context) {

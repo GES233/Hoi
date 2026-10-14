@@ -6,6 +6,7 @@ import '../database/database.dart';
 import '../providers/app_providers.dart';
 import '../screens/log_workout_screen.dart';
 import '../screens/workout_screen.dart';
+import 'workout_dialogs.dart';
 
 /// 「开始运动」、「补记运动」与单项运动入口。
 /// 选中今天时「开始运动」为主按钮；查看历史日期时「补记运动」为主按钮，
@@ -250,7 +251,7 @@ class WorkoutTile extends ConsumerWidget {
       contentPadding: EdgeInsets.zero,
       title: Text(names.isEmpty ? '（无动作记录）' : names),
       subtitle: Text(
-        total != null ? '总用时 ${(total / 60).round()} 分钟' : '用时未记录',
+        total != null ? '总用时 ${formatRecordedSeconds(total)}' : '用时未记录',
       ),
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute(

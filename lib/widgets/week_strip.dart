@@ -6,6 +6,7 @@ import '../database/database.dart';
 import '../providers/app_providers.dart';
 
 const _weekdays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+const _weekdayLabels = ['一', '二', '三', '四', '五', '六', '日'];
 
 /// 周条标题的日期格式：「yyyy年M月d日 周X」
 String formatWeekDate(DateTime date) =>
@@ -18,8 +19,6 @@ class WeekStrip extends ConsumerWidget {
   const WeekStrip({super.key, required this.date});
 
   final DateTime date;
-
-  static const _weekdayLabels = ['一', '二', '三', '四', '五', '六', '日'];
 
   Future<void> _pickDate(BuildContext context, WidgetRef ref) async {
     final today = AppDatabase.dateOnly(DateTime.now());
@@ -36,7 +35,6 @@ class WeekStrip extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final statuses = ref.watch(weekDailyStatusProvider).value ?? {};
     final today = AppDatabase.dateOnly(DateTime.now());
     final weekStart = AppDatabase.weekStart(date);
     final isToday = date == today;
@@ -91,37 +89,56 @@ class WeekStrip extends ConsumerWidget {
               notifier.shift(-7);
             }
           },
-          child: Row(
-            children: [
-              for (var i = 0; i < 7; i++)
-                _dayCell(
-                  context,
-                  ref,
-                  weekStart.add(Duration(days: i)),
-                  statuses[weekStart.add(Duration(days: i))] ??
-                      DailyStatus.none,
-                  today,
-                ),
-            ],
-          ),
+          child: WeekDayRow(date: date, onSelectDay: notifier.select),
         ),
+      ],
+    );
+  }
+}
+
+/// 一周七天的日期格（周条与周进度页共用）。
+/// [onSelectDay] 为空时只作展示，点按不改变全局选中日期。
+class WeekDayRow extends ConsumerWidget {
+  const WeekDayRow({super.key, required this.date, this.onSelectDay});
+
+  final DateTime date;
+  final ValueChanged<DateTime>? onSelectDay;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final statuses = ref.watch(weekDailyStatusProvider).value ?? {};
+    final today = AppDatabase.dateOnly(DateTime.now());
+    final weekStart = AppDatabase.weekStart(date);
+
+    return Row(
+      children: [
+        for (var i = 0; i < 7; i++)
+          _dayCell(
+            context,
+            weekStart.add(Duration(days: i)),
+            statuses[weekStart.add(Duration(days: i))] ?? DailyStatus.none,
+            today,
+          ),
       ],
     );
   }
 
   /// 单日格子：星期标签 + 日期数字（选中为实心圆、今天加下划线）+ 状态点
-  Widget _dayCell(BuildContext context, WidgetRef ref, DateTime day,
-      DailyStatus status, DateTime today) {
+  Widget _dayCell(
+    BuildContext context,
+    DateTime day,
+    DailyStatus status,
+    DateTime today,
+  ) {
     final scheme = Theme.of(context).colorScheme;
     final isSelected = day == date;
     final isToday = day == today;
     final isFuture = day.isAfter(today);
     final labelStyle = Theme.of(context).textTheme.labelSmall;
+    final onSelectDay = this.onSelectDay;
     return Expanded(
       child: InkWell(
-        onTap: isFuture
-            ? null
-            : () => ref.read(selectedDateProvider.notifier).select(day),
+        onTap: onSelectDay == null || isFuture ? null : () => onSelectDay(day),
         child: Column(
           children: [
             Text(_weekdayLabels[day.weekday - 1], style: labelStyle),
@@ -137,8 +154,7 @@ class WeekStrip extends ConsumerWidget {
                   decoration: isToday && !isSelected
                       ? BoxDecoration(
                           border: Border(
-                            bottom:
-                                BorderSide(color: scheme.primary, width: 2),
+                            bottom: BorderSide(color: scheme.primary, width: 2),
                           ),
                         )
                       : null,
@@ -148,8 +164,8 @@ class WeekStrip extends ConsumerWidget {
                       color: isFuture
                           ? scheme.outline
                           : isSelected
-                              ? scheme.onPrimary
-                              : null,
+                          ? scheme.onPrimary
+                          : null,
                     ),
                   ),
                 ),
@@ -167,7 +183,7 @@ class WeekStrip extends ConsumerWidget {
   }
 }
 
-/// 周条与图例共用的状态点：无记录（空心灰）/ 有记录未达最低（浅绿描边）/
+/// 日期格与图例共用的状态点：无记录（空心灰）/ 有记录未达最低（浅绿描边）/
 /// 最低达标（实心绿）/ 常规达标（实心绿 + 外圈）/ 休息（小月亮）。
 /// 不使用红色或叉号，未达标不表达为失败
 class StatusDot extends StatelessWidget {
@@ -210,5 +226,37 @@ class StatusDot extends StatelessWidget {
           color: color,
           border: border != null ? Border.all(color: border, width: 1.5) : null,
         ),
+      );
+}
+
+/// 日期格状态点的图例，放在周进度页；按产品要求，未达标不表达为失败。
+class WeekStatusLegend extends StatelessWidget {
+  const WeekStatusLegend({super.key});
+
+  @override
+  Widget build(BuildContext context) => Wrap(
+    spacing: 12,
+    runSpacing: 4,
+    children: [
+      _item(context, DailyStatus.none, '无记录'),
+      _item(context, DailyStatus.recorded, '有记录'),
+      _item(context, DailyStatus.minDone, '最低达标'),
+      _item(context, DailyStatus.regularDone, '常规达标'),
+      _item(context, DailyStatus.rest, '休息'),
+    ],
+  );
+
+  static Widget _item(BuildContext context, DailyStatus status, String label) =>
+      Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 14,
+            height: 14,
+            child: Center(child: StatusDot(status: status)),
+          ),
+          const SizedBox(width: 4),
+          Text(label, style: Theme.of(context).textTheme.labelSmall),
+        ],
       );
 }

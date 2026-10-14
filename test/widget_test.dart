@@ -150,7 +150,7 @@ void main() {
     await finishTest(tester);
   });
 
-  testWidgets('首页紧凑展示每日状态并从回顾入口查看运动时段', (tester) async {
+  testWidgets('首页紧凑展示每日状态并从周进度入口查看运动时段', (tester) async {
     Future<void> pumpFrames() async {
       await tester.pump();
       await tester.pump(const Duration(seconds: 1));
@@ -174,14 +174,26 @@ void main() {
     await pumpHome(tester, clock: () => endedAt);
 
     expect(find.text('睡眠 较好 · 压力 较低 · 下午精神不错'), findsOneWidget);
-    expect(find.text('本周回顾'), findsOneWidget);
+    expect(find.text('周进度'), findsOneWidget);
     expect(find.text('1 次 · 已记录 40 分钟'), findsOneWidget);
     expect(find.text('运动时段'), findsNothing);
 
-    await tester.tap(find.text('本周回顾'));
+    await tester.tap(find.text('周进度'));
     await pumpFrames();
     expect(find.text('运动时段'), findsOneWidget);
     expect(find.byTooltip('展开完整时间轴'), findsOneWidget);
+
+    // 周进度页的日期格只作展示：点其中的过去某天不应改变首页的选中日期
+    final pastDay = today.weekday == 1
+        ? today
+        : today.subtract(const Duration(days: 1));
+    await tester.tap(find.text('${pastDay.day}').first);
+    await pumpFrames();
+    await tester.pageBack();
+    await pumpFrames();
+    expect(find.text(HomeScreen.formatDate(today)), findsOneWidget);
+    await tester.tap(find.text('周进度'));
+    await pumpFrames();
 
     final dayIndex = today.weekday - 1;
     await tester.tap(find.byKey(ValueKey('timeline-$workoutId-$dayIndex')));
@@ -236,7 +248,7 @@ void main() {
     expect(find.text('今日方案'), findsOneWidget);
     expect(find.text('周期目标'), findsNothing);
     expect(find.text('每周训练三次'), findsNothing);
-    expect(find.text('本周回顾'), findsOneWidget);
+    expect(find.text('周进度'), findsOneWidget);
     await finishTest(tester);
   });
 
@@ -346,7 +358,7 @@ void main() {
     await finishTest(tester);
   });
 
-  testWidgets('每周目标预设与本周概览按已完成训练统计次数与时长', (tester) async {
+  testWidgets('每周目标预设与周进度按已完成训练统计次数与时长', (tester) async {
     final today = AppDatabase.dateOnly(DateTime.now());
     await db.activateRuleSetPreset(
       'weekly_consistency',
@@ -354,15 +366,20 @@ void main() {
     );
     await pumpHome(tester);
 
-    // 首页只保留紧凑回顾入口，完整时间线和目标在回顾页。
-    expect(find.text('本周回顾'), findsOneWidget);
+    // 首页只保留紧凑周进度入口，完整时间线和目标在周进度页。
+    expect(find.text('周进度'), findsOneWidget);
     expect(find.text('0 次 · 已记录 0 分钟'), findsOneWidget);
     expect(find.text('每周基础运动'), findsNothing);
-    await tester.tap(find.text('本周回顾'));
+    await tester.tap(find.text('周进度'));
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
     expect(find.text('每周基础运动'), findsOneWidget);
     expect(find.text('0/3 次 · 0/90 分钟'), findsOneWidget);
+
+    // 日期格状态点的图例在周进度页里
+    expect(find.text('无记录'), findsOneWidget);
+    expect(find.text('最低达标'), findsOneWidget);
+    expect(find.text('休息'), findsOneWidget);
 
     // 一场训练含多个动作多组，次数仍只计 1
     final workoutId = await db.insertCompletedWorkout(

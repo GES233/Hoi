@@ -190,12 +190,17 @@ class _TemplateProgressRow extends ConsumerWidget {
 }
 
 /// 日／周 RuleSet 进度；与上方单次训练模板完成度保持独立。
+/// [date] 为空时跟随全局选中日期；周进度页翻周时传该周日期。
 class RuleGoalsCard extends ConsumerWidget {
-  const RuleGoalsCard({super.key});
+  const RuleGoalsCard({super.key, this.date});
+
+  final DateTime? date;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final progressAsync = ref.watch(ruleSetProgressProvider);
+    final progressAsync = date == null
+        ? ref.watch(ruleSetProgressProvider)
+        : ref.watch(ruleSetProgressForDateProvider(date!));
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),

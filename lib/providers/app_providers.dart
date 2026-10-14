@@ -75,12 +75,21 @@ final weekWorkoutsProvider = StreamProvider.autoDispose<List<Workout>>((ref) {
 final weekTimelineWorkoutsProvider = StreamProvider.autoDispose<List<Workout>>((
   ref,
 ) {
-  final selectedDate = ref.watch(selectedDateProvider);
-  final start = AppDatabase.weekStart(selectedDate);
+  final date = ref.watch(selectedDateProvider);
+  final start = AppDatabase.weekStart(date);
   return ref
       .watch(databaseProvider)
       .watchWorkoutsInTimeRange(start, start.add(const Duration(days: 7)));
 });
+
+/// 指定日期所在自然周内有时间跨度的训练，供独立翻周的页面使用。
+final weekTimelineWorkoutsForDateProvider = StreamProvider.autoDispose
+    .family<List<Workout>, DateTime>((ref, date) {
+      final start = AppDatabase.weekStart(date);
+      return ref
+          .watch(databaseProvider)
+          .watchWorkoutsInTimeRange(start, start.add(const Duration(days: 7)));
+    });
 
 final dailyCheckinProvider = StreamProvider.autoDispose<DailyCheckin?>((ref) {
   final date = ref.watch(selectedDateProvider);
@@ -149,18 +158,30 @@ final ruleSetProgressProvider =
       return ref.watch(databaseProvider).watchRuleSetProgress(date);
     });
 
+/// 指定日期的周期目标进度；不跟随全局选中日期，供独立翻周的页面使用。
+final ruleSetProgressForDateProvider = StreamProvider.autoDispose
+    .family<List<RuleSetProgress>, DateTime>(
+      (ref, date) => ref.watch(databaseProvider).watchRuleSetProgress(date),
+    );
+
 /// 选中日期的休息标记
 final restMarkProvider = StreamProvider.autoDispose<RestMark?>((ref) {
   final date = ref.watch(selectedDateProvider);
   return ref.watch(databaseProvider).watchRestMark(date);
 });
 
-/// 选中日期所在周（周一至周日）每天的每日状态，供周条点阵使用
+/// 选中日期所在周（周一至周日）每天的每日状态，供首页周条点阵使用。
 final weekDailyStatusProvider =
     StreamProvider.autoDispose<Map<DateTime, DailyStatus>>((ref) {
       final date = ref.watch(selectedDateProvider);
       return ref.watch(databaseProvider).watchWeekDailyStatus(date);
     });
+
+/// 指定日期所在周每天的每日状态，供独立翻周的页面使用。
+final weekDailyStatusForDateProvider = StreamProvider.autoDispose
+    .family<Map<DateTime, DailyStatus>, DateTime>(
+      (ref, date) => ref.watch(databaseProvider).watchWeekDailyStatus(date),
+    );
 
 /// 选中日期各模板的最高完成度（key 为模板 id）
 final dailyTemplateProgressProvider =

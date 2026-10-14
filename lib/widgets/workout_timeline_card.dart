@@ -8,7 +8,11 @@ import '../providers/app_providers.dart';
 import 'workout_dialogs.dart';
 
 class WorkoutTimelineCard extends ConsumerStatefulWidget {
-  const WorkoutTimelineCard({super.key});
+  const WorkoutTimelineCard({super.key, this.date});
+
+  /// 展示哪一周：传该周任意一天。为空时跟随全局选中日期。
+  /// 周进度页翻周时传该周日期，卡片不直接读 selectedDateProvider。
+  final DateTime? date;
 
   @override
   ConsumerState<WorkoutTimelineCard> createState() =>
@@ -20,8 +24,10 @@ class _WorkoutTimelineCardState extends ConsumerState<WorkoutTimelineCard> {
 
   @override
   Widget build(BuildContext context) {
-    final date = ref.watch(selectedDateProvider);
-    final workoutsAsync = ref.watch(weekTimelineWorkoutsProvider);
+    final DateTime date = widget.date ?? ref.watch(selectedDateProvider);
+    final workoutsAsync = widget.date == null
+        ? ref.watch(weekTimelineWorkoutsProvider)
+        : ref.watch(weekTimelineWorkoutsForDateProvider(date));
     final workouts = workoutsAsync.value ?? const <Workout>[];
     final hasOngoing = workouts.any((workout) => workout.endedAt == null);
     final clock = ref.watch(appClockProvider);

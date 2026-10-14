@@ -195,6 +195,24 @@ void main() {
     await tester.tap(find.text('周进度'));
     await pumpFrames();
 
+    // 周进度页可独立翻周，且不会改动首页当前选中日期。
+    final previousWeekStart = AppDatabase.weekStart(today)
+        .subtract(const Duration(days: 7));
+    final previousWeekEnd = previousWeekStart.add(const Duration(days: 6));
+    final previousWeekLabel =
+        '${DateFormat('M月d日').format(previousWeekStart)} – '
+        '${DateFormat('M月d日').format(previousWeekEnd)}';
+    await tester.tap(find.byTooltip('上一周'));
+    await pumpFrames();
+    expect(find.text(previousWeekLabel), findsWidgets);
+    expect(find.text('回到本周'), findsOneWidget);
+    expect(
+      find.byKey(ValueKey('timeline-$workoutId-${today.weekday - 1}')),
+      findsNothing,
+    );
+    await tester.tap(find.text('回到本周'));
+    await pumpFrames();
+
     final dayIndex = today.weekday - 1;
     await tester.tap(find.byKey(ValueKey('timeline-$workoutId-$dayIndex')));
     await pumpFrames();

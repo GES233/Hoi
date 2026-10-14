@@ -99,14 +99,23 @@ class WeekStrip extends ConsumerWidget {
 /// 一周七天的日期格（周条与周进度页共用）。
 /// [onSelectDay] 为空时只作展示，点按不改变全局选中日期。
 class WeekDayRow extends ConsumerWidget {
-  const WeekDayRow({super.key, required this.date, this.onSelectDay});
+  const WeekDayRow({
+    super.key,
+    required this.date,
+    this.onSelectDay,
+    this.followSelectedDate = true,
+  });
 
   final DateTime date;
   final ValueChanged<DateTime>? onSelectDay;
+  final bool followSelectedDate;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final statuses = ref.watch(weekDailyStatusProvider).value ?? {};
+    final statusesAsync = followSelectedDate
+        ? ref.watch(weekDailyStatusProvider)
+        : ref.watch(weekDailyStatusForDateProvider(date));
+    final statuses = statusesAsync.value ?? {};
     final today = AppDatabase.dateOnly(DateTime.now());
     final weekStart = AppDatabase.weekStart(date);
 

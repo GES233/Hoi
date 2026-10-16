@@ -209,6 +209,7 @@ class _AddExerciseDialogState extends State<_AddExerciseDialog> {
                   });
                 },
               ),
+              const SizedBox(height: 10),
               TextFormField(
                 controller: _nameController,
                 enabled: _selectedId < 0,
@@ -216,6 +217,7 @@ class _AddExerciseDialogState extends State<_AddExerciseDialog> {
                 validator: (v) =>
                     (v == null || v.trim().isEmpty) ? '请输入动作名称' : null,
               ),
+              const SizedBox(height: 10),
               DropdownButtonFormField<ExerciseCategory>(
                 key: ValueKey('category-$_selectedId-$_category'),
                 initialValue: _category,
@@ -230,6 +232,7 @@ class _AddExerciseDialogState extends State<_AddExerciseDialog> {
                         () => _category = v ?? ExerciseCategory.cardio,
                       ),
               ),
+              const SizedBox(height: 10),
               DropdownButtonFormField<TrackingType>(
                 key: ValueKey('tracking-$_selectedId-$_trackingType'),
                 initialValue: _trackingType,
@@ -244,6 +247,7 @@ class _AddExerciseDialogState extends State<_AddExerciseDialog> {
                         () => _trackingType = value ?? TrackingType.reps,
                       ),
               ),
+              const SizedBox(height: 10),
               TextFormField(
                 controller: _noteController,
                 decoration: const InputDecoration(labelText: '备注（可选）'),
@@ -424,33 +428,43 @@ class _AddSetDialogState extends State<_AddSetDialog> {
   }
 
   List<Widget> _buildOrderedCoreFields() {
-    final repsField = TextField(
-      controller: _repsController,
-      decoration: InputDecoration(
-        labelText: '次数（可选）',
-        helperText: widget.trackingType == TrackingType.reps ? '当前动作主记录项' : null,
+    final repsField = Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: TextField(
+        controller: _repsController,
+        decoration: InputDecoration(
+          labelText: '次数（可选）',
+          helperText:
+              widget.trackingType == TrackingType.reps ? '当前动作主记录项' : null,
+        ),
+        keyboardType: TextInputType.number,
+        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
       ),
-      keyboardType: TextInputType.number,
-      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
     );
-    final durationField = TextField(
-      controller: _durationController,
-      decoration: InputDecoration(
-        labelText: '持续秒数（可选）',
-        helperText:
-            widget.trackingType == TrackingType.duration ? '当前动作主记录项' : null,
+    final durationField = Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: TextField(
+        controller: _durationController,
+        decoration: InputDecoration(
+          labelText: '持续秒数（可选）',
+          helperText:
+              widget.trackingType == TrackingType.duration ? '当前动作主记录项' : null,
+        ),
+        keyboardType: TextInputType.number,
+        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
       ),
-      keyboardType: TextInputType.number,
-      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
     );
-    final distanceField = TextField(
-      controller: _distanceController,
-      decoration: InputDecoration(
-        labelText: '距离（米，可选）',
-        helperText:
-            widget.trackingType == TrackingType.distance ? '当前动作主记录项' : null,
+    final distanceField = Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: TextField(
+        controller: _distanceController,
+        decoration: InputDecoration(
+          labelText: '距离（米，可选）',
+          helperText:
+              widget.trackingType == TrackingType.distance ? '当前动作主记录项' : null,
+        ),
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
       ),
-      keyboardType: const TextInputType.numberWithOptions(decimal: true),
     );
     return switch (widget.trackingType) {
       TrackingType.duration => [durationField, repsField, distanceField],
@@ -512,6 +526,7 @@ class _AddSetDialogState extends State<_AddSetDialog> {
               ],
             ),
             ..._buildOrderedCoreFields(),
+            const SizedBox(height: 10),
             TextField(
               controller: _weightController,
               decoration: const InputDecoration(labelText: '重量 kg（可选）'),
@@ -519,6 +534,7 @@ class _AddSetDialogState extends State<_AddSetDialog> {
                 decimal: true,
               ),
             ),
+            const SizedBox(height: 4),
             Align(
               alignment: Alignment.centerLeft,
               child: TextButton.icon(
@@ -538,6 +554,7 @@ class _AddSetDialogState extends State<_AddSetDialog> {
                   decimal: true,
                 ),
               ),
+              const SizedBox(height: 10),
               Row(
                 children: [
                   Expanded(
@@ -565,6 +582,7 @@ class _AddSetDialogState extends State<_AddSetDialog> {
                   ),
                 ],
               ),
+              const SizedBox(height: 10),
             ],
             TextField(
               controller: _noteController,

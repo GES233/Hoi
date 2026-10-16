@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/app_providers.dart';
+import '../theme/app_theme.dart';
+import '../widgets/daily_checkin_card.dart';
 import '../widgets/home_cards.dart';
 import '../widgets/home_workout_cards.dart';
-import '../widgets/daily_checkin_card.dart';
-import '../widgets/week_strip.dart';
 import '../widgets/week_progress_entry.dart';
+import '../widgets/week_strip.dart';
 import 'exercises_screen.dart';
 import 'plans_screen.dart';
 import 'rules_screen.dart';
@@ -27,53 +28,123 @@ class HomeScreen extends ConsumerWidget {
     final workoutsAsync = ref.watch(completedWorkoutsProvider);
     final ongoingAsync = ref.watch(ongoingWorkoutProvider);
     final ongoing = ongoingAsync.value;
+    final scheme = Theme.of(context).colorScheme;
+    final themePref = ref.watch(themePreferenceProvider);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Hoi'),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: scheme.primaryContainer,
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Icon(
+                Icons.bolt_rounded,
+                size: 18,
+                color: scheme.onPrimaryContainer,
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Text('Hoi'),
+          ],
+        ),
         actions: [
-          TextButton(
+          TextButton.icon(
+            icon: const Icon(Icons.fitness_center_outlined, size: 16),
+            label: const Text('动作'),
             onPressed: () => Navigator.of(
               context,
             ).push(MaterialPageRoute(builder: (_) => const ExercisesScreen())),
-            child: const Text('动作'),
           ),
-          TextButton(
-            onPressed: () => Navigator.of(context)
-                .push(MaterialPageRoute(builder: (_) => const RulesScreen())),
-            child: const Text('目标'),
+          TextButton.icon(
+            icon: const Icon(Icons.flag_outlined, size: 16),
+            label: const Text('目标'),
+            onPressed: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const RulesScreen())),
           ),
-          TextButton(
-            onPressed: () => Navigator.of(context)
-                .push(MaterialPageRoute(builder: (_) => const PlansScreen())),
-            child: const Text('方案'),
+          TextButton.icon(
+            icon: const Icon(Icons.assignment_outlined, size: 16),
+            label: const Text('方案'),
+            onPressed: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const PlansScreen())),
+          ),
+          PopupMenuButton<HoiThemePreference>(
+            tooltip: '切换外观与对比度',
+            icon: Icon(themePref.icon, size: 20),
+            initialValue: themePref,
+            onSelected: (value) =>
+                ref.read(themePreferenceProvider.notifier).select(value),
+            itemBuilder: (context) => [
+              for (final option in HoiThemePreference.values)
+                PopupMenuItem(
+                  value: option,
+                  child: Row(
+                    children: [
+                      Icon(
+                        option.icon,
+                        size: 18,
+                        color: option == themePref ? scheme.primary : null,
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        option.label,
+                        style: TextStyle(
+                          fontWeight: option == themePref
+                              ? FontWeight.w700
+                              : FontWeight.normal,
+                          color: option == themePref ? scheme.primary : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
           ),
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
         children: [
-          WeekStrip(date: date),
-          const SizedBox(height: 12),
-          const DailyCheckinCard(),
-          const SizedBox(height: 12),
-          const TodayPlanCard(),
-          const SizedBox(height: 12),
-          WorkoutEntryButtons(ongoing: ongoing, selectedDate: date),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              child: Column(
+                children: [
+                  WeekStrip(date: date),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Divider(height: 1),
+                  ),
+                  const DailyCheckinCard(),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
           if (ongoingAsync.hasError)
             const Padding(
-              padding: EdgeInsets.only(top: 12),
+              padding: EdgeInsets.only(bottom: 12),
               child: Text('进行中训练状态加载失败'),
             )
           else if (ongoing != null) ...[
-            const SizedBox(height: 12),
             OngoingWorkoutCard(workout: ongoing),
+            const SizedBox(height: 14),
           ],
-          const SizedBox(height: 12),
+          WorkoutEntryButtons(ongoing: ongoing, selectedDate: date),
+          const SizedBox(height: 14),
+          const TodayPlanCard(),
+          const SizedBox(height: 14),
           WorkoutSection(workoutsAsync: workoutsAsync),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           FoodSection(entriesAsync: foodAsync),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           const WeekProgressEntry(),
         ],
       ),

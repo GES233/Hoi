@@ -78,7 +78,8 @@ class _AddFoodEntryDialogState extends ConsumerState<AddFoodEntryDialog> {
                 onChanged: (v) =>
                     setState(() => _mealType = v ?? MealType.breakfast),
               ),
-              if (favorites.isNotEmpty)
+              if (favorites.isNotEmpty) ...[
+                const SizedBox(height: 10),
                 DropdownButtonFormField<FavoriteFood>(
                   decoration: const InputDecoration(labelText: '从常用食物选择'),
                   items: [
@@ -96,12 +97,15 @@ class _AddFoodEntryDialogState extends ConsumerState<AddFoodEntryDialog> {
                     });
                   },
                 ),
+              ],
+              const SizedBox(height: 10),
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(labelText: '食物名称'),
                 validator: (v) =>
                     (v == null || v.trim().isEmpty) ? '请输入食物名称' : null,
               ),
+              const SizedBox(height: 10),
               TextFormField(
                 controller: _caloriesController,
                 decoration: const InputDecoration(labelText: '热量 (kcal)'),

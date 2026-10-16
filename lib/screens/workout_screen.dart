@@ -246,6 +246,7 @@ class _WorkoutScreenState extends ConsumerState<WorkoutScreen> {
   }
 
   Widget _buildBody(Workout workout) {
+    final scheme = Theme.of(context).colorScheme;
     final exercises =
         ref.watch(workoutExercisesProvider(workout.id)).value ?? [];
     final sets = ref.watch(workoutSetsProvider(workout.id)).value ?? [];
@@ -256,30 +257,46 @@ class _WorkoutScreenState extends ConsumerState<WorkoutScreen> {
     final paused = workout.pausedAt != null;
 
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
       children: [
         // 训练总用时降级为紧凑一行，不占视觉中心；
         // 训练级「暂停训练 / 结束训练」与组级秒表文案明确区分
-        Row(
-          children: [
-            Text(
-              '总用时 ${formatElapsed(elapsed)}${paused ? ' · 已暂停' : ''}',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                fontFeatures: const [FontFeature.tabularFigures()],
-              ),
+        Card(
+          color: paused
+              ? scheme.secondaryContainer.withValues(alpha: 0.45)
+              : scheme.primaryContainer.withValues(alpha: 0.45),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(
+              children: [
+                Icon(
+                  paused ? Icons.pause_circle_outline : Icons.timer_outlined,
+                  size: 20,
+                  color: paused ? scheme.secondary : scheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '总用时 ${formatElapsed(elapsed)}${paused ? ' · 已暂停' : ''}',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  icon: Icon(paused ? Icons.play_arrow : Icons.pause, size: 18),
+                  label: Text(paused ? '继续训练' : '暂停训练'),
+                  onPressed: () => _togglePause(workout),
+                ),
+                const SizedBox(width: 4),
+                FilledButton.icon(
+                  icon: const Icon(Icons.stop, size: 18),
+                  label: const Text('结束训练'),
+                  onPressed: () => _finish(workout, exercises, sets),
+                ),
+              ],
             ),
-            const Spacer(),
-            TextButton.icon(
-              icon: Icon(paused ? Icons.play_arrow : Icons.pause, size: 18),
-              label: Text(paused ? '继续训练' : '暂停训练'),
-              onPressed: () => _togglePause(workout),
-            ),
-            FilledButton.icon(
-              icon: const Icon(Icons.stop, size: 18),
-              label: const Text('结束训练'),
-              onPressed: () => _finish(workout, exercises, sets),
-            ),
-          ],
+          ),
         ),
         if (workout.templateVersionId != null) ...[
           const SizedBox(height: 12),

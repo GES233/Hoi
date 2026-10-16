@@ -43,6 +43,7 @@ class WeekStrip extends ConsumerWidget {
         .add(const Duration(days: 7))
         .isAfter(AppDatabase.weekStart(today));
     final notifier = ref.read(selectedDateProvider.notifier);
+    final scheme = Theme.of(context).colorScheme;
 
     return Column(
       children: [
@@ -56,20 +57,40 @@ class WeekStrip extends ConsumerWidget {
             ),
             Expanded(
               child: InkWell(
+                borderRadius: BorderRadius.circular(10),
                 onTap: () => _pickDate(context, ref),
-                child: Center(
-                  child: Text(
-                    formatWeekDate(date),
-                    style: Theme.of(context).textTheme.titleMedium,
-                    overflow: TextOverflow.ellipsis,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 6,
+                    horizontal: 8,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.calendar_today_rounded,
+                        size: 15,
+                        color: scheme.primary,
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          formatWeekDate(date),
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
             if (!isToday)
-              TextButton(
+              TextButton.icon(
+                icon: const Icon(Icons.today_rounded, size: 15),
                 onPressed: notifier.goToday,
-                child: const Text('回到今天'),
+                label: const Text('回到今天'),
               ),
             IconButton(
               icon: const Icon(Icons.chevron_right),
@@ -79,6 +100,7 @@ class WeekStrip extends ConsumerWidget {
             ),
           ],
         ),
+        const SizedBox(height: 4),
         GestureDetector(
           behavior: HitTestBehavior.opaque,
           onHorizontalDragEnd: (details) {
@@ -132,7 +154,7 @@ class WeekDayRow extends ConsumerWidget {
     );
   }
 
-  /// 单日格子：星期标签 + 日期数字（选中为实心圆、今天加下划线）+ 状态点
+  /// 单日格子：圆润胶囊容器 + 星期标签 + 日期数字（选中为实心圆、今天加下划线）+ 状态点
   Widget _dayCell(
     BuildContext context,
     DateTime day,
@@ -140,52 +162,93 @@ class WeekDayRow extends ConsumerWidget {
     DateTime today,
   ) {
     final scheme = Theme.of(context).colorScheme;
-    final isSelected = day == date;
+    final isSelected = followSelectedDate && day == date;
     final isToday = day == today;
     final isFuture = day.isAfter(today);
     final labelStyle = Theme.of(context).textTheme.labelSmall;
     final onSelectDay = this.onSelectDay;
     return Expanded(
-      child: InkWell(
-        onTap: onSelectDay == null || isFuture ? null : () => onSelectDay(day),
-        child: Column(
-          children: [
-            Text(_weekdayLabels[day.weekday - 1], style: labelStyle),
-            Container(
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: isSelected ? scheme.primary : null,
-              ),
-              child: Center(
-                child: Container(
-                  decoration: isToday && !isSelected
-                      ? BoxDecoration(
-                          border: Border(
-                            bottom: BorderSide(color: scheme.primary, width: 2),
-                          ),
-                        )
-                      : null,
-                  child: Text(
-                    '${day.day}',
-                    style: labelStyle?.copyWith(
-                      color: isFuture
-                          ? scheme.outline
-                          : isSelected
-                          ? scheme.onPrimary
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap:
+              onSelectDay == null || isFuture ? null : () => onSelectDay(day),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? scheme.primaryContainer.withValues(alpha: 0.45)
+                  : isToday
+                  ? scheme.surfaceContainerHighest.withValues(alpha: 0.45)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(12),
+              border: isSelected
+                  ? Border.all(
+                      color: scheme.primary.withValues(alpha: 0.35),
+                      width: 1,
+                    )
+                  : null,
+            ),
+            child: Column(
+              children: [
+                Text(
+                  _weekdayLabels[day.weekday - 1],
+                  style: labelStyle?.copyWith(
+                    color: isSelected
+                        ? scheme.primary
+                        : isFuture
+                        ? scheme.outline
+                        : scheme.onSurfaceVariant,
+                    fontWeight:
+                        isSelected || isToday ? FontWeight.w700 : null,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: isSelected ? scheme.primary : null,
+                  ),
+                  child: Center(
+                    child: Container(
+                      decoration: isToday && !isSelected
+                          ? BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: scheme.primary,
+                                  width: 2,
+                                ),
+                              ),
+                            )
                           : null,
+                      child: Text(
+                        '${day.day}',
+                        style: labelStyle?.copyWith(
+                          fontWeight: isSelected || isToday
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                          color: isFuture
+                              ? scheme.outline
+                              : isSelected
+                              ? scheme.onPrimary
+                              : scheme.onSurface,
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
+                const SizedBox(height: 4),
+                SizedBox(
+                  height: 14,
+                  child: Center(child: StatusDot(status: status)),
+                ),
+              ],
             ),
-            const SizedBox(height: 2),
-            SizedBox(
-              height: 14,
-              child: Center(child: StatusDot(status: status)),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -245,7 +308,7 @@ class WeekStatusLegend extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Wrap(
     spacing: 12,
-    runSpacing: 4,
+    runSpacing: 6,
     children: [
       _item(context, DailyStatus.none, '无记录'),
       _item(context, DailyStatus.recorded, '有记录'),
@@ -255,8 +318,15 @@ class WeekStatusLegend extends StatelessWidget {
     ],
   );
 
-  static Widget _item(BuildContext context, DailyStatus status, String label) =>
-      Row(
+  static Widget _item(BuildContext context, DailyStatus status, String label) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           SizedBox(
@@ -264,8 +334,10 @@ class WeekStatusLegend extends StatelessWidget {
             height: 14,
             child: Center(child: StatusDot(status: status)),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 5),
           Text(label, style: Theme.of(context).textTheme.labelSmall),
         ],
-      );
+      ),
+    );
+  }
 }

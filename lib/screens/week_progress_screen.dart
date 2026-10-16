@@ -51,48 +51,64 @@ class _WeekProgressScreenState extends ConsumerState<WeekProgressScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('周进度')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
         children: [
-          Row(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.chevron_left),
-                tooltip: '上一周',
-                visualDensity: VisualDensity.compact,
-                onPressed: () => _shiftWeek(-7),
-              ),
-              Expanded(
-                child: Center(
-                  child: Text(
-                    label,
-                    style: Theme.of(context).textTheme.titleMedium,
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.chevron_left),
+                        tooltip: '上一周',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => _shiftWeek(-7),
+                      ),
+                      Expanded(
+                        child: Center(
+                          child: Text(
+                            label,
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                      if (!isThisWeek)
+                        TextButton.icon(
+                          icon: const Icon(Icons.today_rounded, size: 15),
+                          onPressed: () => setState(() {
+                            _weekStart = AppDatabase.weekStart(
+                              AppDatabase.dateOnly(
+                                ref.read(appClockProvider)(),
+                              ),
+                            );
+                          }),
+                          label: const Text('回到本周'),
+                        ),
+                      IconButton(
+                        icon: const Icon(Icons.chevron_right),
+                        tooltip: '下一周',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: _canGoNext ? () => _shiftWeek(7) : null,
+                      ),
+                    ],
                   ),
-                ),
+                  const SizedBox(height: 6),
+                  WeekDayRow(date: _weekStart, followSelectedDate: false),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 10),
+                    child: Divider(height: 1),
+                  ),
+                  const WeekStatusLegend(),
+                ],
               ),
-              if (!isThisWeek)
-                TextButton(
-                  onPressed: () => setState(() {
-                    _weekStart = AppDatabase.weekStart(
-                      AppDatabase.dateOnly(ref.read(appClockProvider)()),
-                    );
-                  }),
-                  child: const Text('回到本周'),
-                ),
-              IconButton(
-                icon: const Icon(Icons.chevron_right),
-                tooltip: '下一周',
-                visualDensity: VisualDensity.compact,
-                onPressed: _canGoNext ? () => _shiftWeek(7) : null,
-              ),
-            ],
+            ),
           ),
-          const SizedBox(height: 8),
-          WeekDayRow(date: _weekStart, followSelectedDate: false),
-          const SizedBox(height: 8),
-          const WeekStatusLegend(),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           WorkoutTimelineCard(date: _weekStart),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           RuleGoalsCard(date: _weekStart),
         ],
       ),

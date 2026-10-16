@@ -142,17 +142,32 @@ class DailyCheckinCard extends ConsumerWidget {
         ? '记录睡眠、压力或备注'
         : details.join(' · ');
     return Material(
-      color: Colors.transparent,
+      color: details.isEmpty
+          ? scheme.surfaceContainerLow
+          : scheme.primaryContainer.withValues(alpha: 0.35),
+      borderRadius: BorderRadius.circular(12),
       child: InkWell(
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(12),
         onTap: checkinAsync.hasError
             ? null
             : () => _edit(context, ref, date, checkin),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
           child: Row(
             children: [
-              Icon(Icons.bedtime_outlined, size: 19, color: scheme.primary),
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: scheme.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.spa_outlined,
+                  size: 16,
+                  color: scheme.primary,
+                ),
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -160,6 +175,7 @@ class DailyCheckinCard extends ConsumerWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: details.isEmpty ? null : FontWeight.w500,
                     color: details.isEmpty
                         ? scheme.onSurfaceVariant
                         : scheme.onSurface,

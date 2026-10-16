@@ -6,6 +6,7 @@ import '../database/database.dart';
 import '../providers/app_providers.dart';
 import '../screens/log_workout_screen.dart';
 import '../screens/workout_screen.dart';
+import '../theme/app_theme.dart';
 import 'workout_dialogs.dart';
 
 /// 「开始运动」、「补记运动」与单项运动入口。
@@ -62,22 +63,23 @@ class WorkoutEntryButtons extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
     final isToday =
         selectedDate == AppDatabase.dateOnly(ref.watch(appClockProvider)());
     final startButton = isToday
         ? FilledButton.icon(
-            icon: const Icon(Icons.play_arrow),
+            icon: const Icon(Icons.play_arrow_rounded),
             label: const Text('开始运动'),
             onPressed: () => _startWorkout(context, ref),
           )
         : OutlinedButton.icon(
-            icon: const Icon(Icons.play_arrow),
+            icon: const Icon(Icons.play_arrow_rounded),
             label: const Text('开始运动'),
             onPressed: () => _startWorkout(context, ref),
           );
     final logButton = isToday
         ? OutlinedButton.icon(
-            icon: const Icon(Icons.edit_note),
+            icon: const Icon(Icons.edit_note_rounded),
             label: const Text('补记运动'),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
@@ -86,7 +88,7 @@ class WorkoutEntryButtons extends ConsumerWidget {
             ),
           )
         : FilledButton.icon(
-            icon: const Icon(Icons.edit_note),
+            icon: const Icon(Icons.edit_note_rounded),
             label: const Text('补记运动'),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
@@ -95,38 +97,64 @@ class WorkoutEntryButtons extends ConsumerWidget {
             ),
           );
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (ongoing == null) ...[
-              Expanded(child: startButton),
-              const SizedBox(width: 12),
-            ],
-            Expanded(child: logButton),
-          ],
-        ),
-        const SizedBox(height: 8),
-        SizedBox(
-          width: double.infinity,
-          child: TextButton.icon(
-            icon: const Icon(Icons.add),
-            label: const Text('记录单项运动'),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) =>
-                    LogWorkoutScreen.singleExercise(initialDate: selectedDate),
+            Row(
+              children: [
+                if (ongoing == null) ...[
+                  Expanded(child: startButton),
+                  const SizedBox(width: 10),
+                ],
+                Expanded(child: logButton),
+              ],
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton.icon(
+                style: TextButton.styleFrom(
+                  backgroundColor: scheme.surfaceContainerLow,
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                ),
+                icon: const Icon(Icons.add_circle_outline_rounded, size: 18),
+                label: const Text('记录单项运动'),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => LogWorkoutScreen.singleExercise(
+                      initialDate: selectedDate,
+                    ),
+                  ),
+                ),
               ),
             ),
-          ),
+            if (!isToday && ongoing == null) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Icon(
+                    Icons.info_outline_rounded,
+                    size: 14,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      '「开始运动」从现在开始计时；补记归属选中日期',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
         ),
-        if (!isToday && ongoing == null)
-          Text(
-            '「开始运动」从现在开始计时；补记归属选中日期',
-            style: Theme.of(context).textTheme.labelSmall,
-          ),
-      ],
+      ),
     );
   }
 }
@@ -140,24 +168,49 @@ class OngoingWorkoutCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final startedAt = workout.startedAt;
     final subtitle = startedAt == null
         ? '计时信息缺失'
         : '开始于 ${DateFormat('HH:mm').format(startedAt)}'
               '${workout.pausedAt != null ? ' · 已暂停' : ''}';
     return Card(
+      color: scheme.primaryContainer.withValues(alpha: 0.55),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: scheme.primary.withValues(alpha: 0.4)),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(14),
         child: Row(
           children: [
-            const Icon(Icons.directions_run),
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: scheme.primary,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(Icons.directions_run, color: scheme.onPrimary),
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('训练进行中', style: Theme.of(context).textTheme.titleSmall),
-                  Text(subtitle, style: Theme.of(context).textTheme.labelSmall),
+                  Text(
+                    '训练进行中',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -183,13 +236,38 @@ class WorkoutSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('运动记录', style: Theme.of(context).textTheme.titleMedium),
+            Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: scheme.tertiaryContainer.withValues(alpha: 0.7),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    Icons.fitness_center_rounded,
+                    size: 18,
+                    color: scheme.tertiary,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  '运动记录',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
             // 加载 / 错误 / 空 / 数据 分开呈现
             if (workoutsAsync.hasError)
               const Padding(
@@ -202,9 +280,20 @@ class WorkoutSection extends ConsumerWidget {
                 child: Text('加载中…'),
               )
             else if (workoutsAsync.value!.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
-                child: Text('暂无记录'),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  vertical: 14,
+                  horizontal: 14,
+                ),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '暂无记录',
+                  style: TextStyle(color: scheme.onSurfaceVariant),
+                ),
               )
             else
               for (final w in workoutsAsync.value!) WorkoutTile(workout: w),
@@ -246,26 +335,60 @@ class WorkoutTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
     final exercises =
         ref.watch(workoutExercisesProvider(workout.id)).value ?? [];
     final names = exercises.map((e) => e.name).join('、');
     final total = workout.totalSeconds;
-    return ListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
-      title: Text(names.isEmpty ? '（无动作记录）' : names),
-      subtitle: Text(
-        total != null ? '总用时 ${formatRecordedSeconds(total)}' : '用时未记录',
-      ),
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => LogWorkoutScreen.editing(workout: workout),
+    final firstCategory = exercises.firstOrNull?.category;
+    final accentColor = firstCategory == null
+        ? scheme.primary
+        : HoiTheme.categoryColor(scheme, firstCategory);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Material(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+        child: ListTile(
+          dense: true,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          contentPadding: const EdgeInsets.only(left: 12, right: 4),
+          leading: Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: accentColor.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              firstCategory == null
+                  ? Icons.bolt_rounded
+                  : HoiTheme.categoryIcon(firstCategory),
+              size: 18,
+              color: accentColor,
+            ),
+          ),
+          title: Text(
+            names.isEmpty ? '（无动作记录）' : names,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          subtitle: Text(
+            total != null ? '总用时 ${formatRecordedSeconds(total)}' : '用时未记录',
+          ),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => LogWorkoutScreen.editing(workout: workout),
+            ),
+          ),
+          trailing: IconButton(
+            icon: const Icon(Icons.delete_outline, size: 20),
+            tooltip: '删除',
+            onPressed: () => _confirmDelete(context, ref),
+          ),
         ),
-      ),
-      trailing: IconButton(
-        icon: const Icon(Icons.delete_outline),
-        tooltip: '删除',
-        onPressed: () => _confirmDelete(context, ref),
       ),
     );
   }

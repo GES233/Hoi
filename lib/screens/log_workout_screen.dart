@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../database/database.dart';
 import '../providers/app_providers.dart';
+import '../theme/app_theme.dart';
 import '../widgets/workout_dialogs.dart';
 
 /// 补记 / 编辑已完成训练。
@@ -645,22 +646,37 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
   }
 
   Widget _buildMetaCard() {
+    final scheme = Theme.of(context).colorScheme;
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            Row(
-              children: [
-                Text('日期', style: Theme.of(context).textTheme.labelLarge),
-                const Spacer(),
-                TextButton.icon(
-                  icon: const Icon(Icons.calendar_today, size: 18),
-                  label: Text(DateFormat('yyyy年M月d日').format(_date)),
-                  onPressed: _pickDate,
-                ),
-              ],
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.event_note_rounded,
+                    size: 18,
+                    color: scheme.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Text('日期', style: Theme.of(context).textTheme.labelLarge),
+                  const Spacer(),
+                  TextButton.icon(
+                    icon: const Icon(Icons.calendar_today, size: 16),
+                    label: Text(DateFormat('yyyy年M月d日').format(_date)),
+                    onPressed: _pickDate,
+                  ),
+                ],
+              ),
             ),
+            const SizedBox(height: 10),
             Row(
               children: [
                 Expanded(
@@ -689,6 +705,7 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: 12),
             TextField(
               controller: _minutesController,
               decoration: const InputDecoration(
@@ -699,11 +716,15 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
                 decimal: true,
               ),
             ),
+            const SizedBox(height: 10),
             TextField(
               controller: _feelingController,
               decoration: const InputDecoration(labelText: '感受（可选）'),
             ),
-            if (!widget.singleExercise) _buildPlanDropdown(),
+            if (!widget.singleExercise) ...[
+              const SizedBox(height: 10),
+              _buildPlanDropdown(),
+            ],
           ],
         ),
       ),
@@ -737,22 +758,35 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
 
   /// 动作与组草稿列表（补记与编辑模式共用，均支持点按编辑组）
   List<Widget> _buildDrafts() {
+    final scheme = Theme.of(context).colorScheme;
     return [
       for (var i = 0; i < _drafts.length; i++)
         _exerciseCard(
+          category: _drafts[i].category,
           title: '${_drafts[i].name}（${_drafts[i].category.label}）',
           onDelete: () => setState(() => _drafts.removeAt(i)),
           sets: [
             for (var j = 0; j < _drafts[i].sets.length; j++)
-              ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                title: Text(describeSet(_drafts[i].sets[j].toPreviewSet())),
-                onTap: () => _editDraftSet(i, j),
-                trailing: IconButton(
-                  icon: const Icon(Icons.close, size: 18),
-                  tooltip: '删除组',
-                  onPressed: () => setState(() => _drafts[i].sets.removeAt(j)),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Material(
+                  color: scheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(10),
+                  child: ListTile(
+                    dense: true,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    contentPadding: const EdgeInsets.only(left: 12, right: 4),
+                    title: Text(describeSet(_drafts[i].sets[j].toPreviewSet())),
+                    onTap: () => _editDraftSet(i, j),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.close, size: 18),
+                      tooltip: '删除组',
+                      onPressed: () =>
+                          setState(() => _drafts[i].sets.removeAt(j)),
+                    ),
+                  ),
                 ),
               ),
           ],
@@ -762,25 +796,44 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
   }
 
   Widget _exerciseCard({
+    required ExerciseCategory category,
     required String title,
     required VoidCallback onDelete,
     required List<Widget> sets,
     required VoidCallback onAddSet,
   }) {
+    final scheme = Theme.of(context).colorScheme;
+    final accentColor = HoiTheme.categoryColor(scheme, category);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Card(
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
+                  Container(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      color: accentColor.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    child: Icon(
+                      HoiTheme.categoryIcon(category),
+                      size: 16,
+                      color: accentColor,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       title,
-                      style: Theme.of(context).textTheme.titleSmall,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                   IconButton(
@@ -790,6 +843,7 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
                   ),
                 ],
               ),
+              if (sets.isNotEmpty) const SizedBox(height: 6),
               ...sets,
               TextButton.icon(
                 icon: const Icon(Icons.add, size: 18),

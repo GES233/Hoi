@@ -84,6 +84,7 @@ class _FinishWorkoutDialogState
             decoration: const InputDecoration(labelText: '训练总用时（分钟）'),
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
           ),
+          const SizedBox(height: 10),
           TextField(
             controller: _feelingController,
             decoration: const InputDecoration(labelText: '感受（可选）'),

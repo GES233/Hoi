@@ -217,9 +217,25 @@ class _TemplateListTile extends ConsumerWidget {
             '$noteSuffix';
       }
     }
+    final scheme = Theme.of(context).colorScheme;
     return ListTile(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      leading: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: scheme.primaryContainer.withValues(alpha: 0.7),
+          borderRadius: BorderRadius.circular(11),
+        ),
+        child: Icon(
+          Icons.assignment_outlined,
+          size: 20,
+          color: scheme.primary,
+        ),
+      ),
       title: Text(
         '${summary.version.name} · v${summary.version.versionNumber}',
+        style: const TextStyle(fontWeight: FontWeight.w600),
       ),
       subtitle: Text(subtitle),
       isThreeLine: subtitle.contains('\n'),
@@ -543,6 +559,7 @@ class _TemplateFormDialogState extends ConsumerState<TemplateFormDialog> {
             });
           },
         ),
+        const SizedBox(height: 10),
         TextFormField(
           controller: draft.exerciseController,
           enabled: draft.selectedExerciseId == null,
@@ -550,6 +567,7 @@ class _TemplateFormDialogState extends ConsumerState<TemplateFormDialog> {
           validator: (value) =>
               value == null || value.trim().isEmpty ? '请输入动作名称' : null,
         ),
+        const SizedBox(height: 10),
         DropdownButtonFormField<ExerciseCategory>(
           key: ValueKey(
             'template-category-$index-${draft.selectedExerciseId ?? -1}-${draft.category}',
@@ -566,6 +584,7 @@ class _TemplateFormDialogState extends ConsumerState<TemplateFormDialog> {
                   () => draft.category = value ?? ExerciseCategory.cardio,
                 ),
         ),
+        const SizedBox(height: 10),
         DropdownButtonFormField<PlanMetric>(
           key: ValueKey(
             'template-metric-$index-${draft.selectedExerciseId ?? -1}-${draft.metric}',
@@ -583,6 +602,7 @@ class _TemplateFormDialogState extends ConsumerState<TemplateFormDialog> {
                   () => draft.metric = value ?? PlanMetric.duration,
                 ),
         ),
+        const SizedBox(height: 10),
         TextFormField(
           controller: draft.minimumController,
           decoration: InputDecoration(labelText: '最低量（$unitLabel，可选）'),
@@ -596,6 +616,7 @@ class _TemplateFormDialogState extends ConsumerState<TemplateFormDialog> {
             return null;
           },
         ),
+        const SizedBox(height: 10),
         TextFormField(
           controller: draft.regularController,
           decoration: InputDecoration(labelText: '常规量（$unitLabel）'),
@@ -611,7 +632,8 @@ class _TemplateFormDialogState extends ConsumerState<TemplateFormDialog> {
             return null;
           },
         ),
-        if (draft.metric == PlanMetric.sets)
+        if (draft.metric == PlanMetric.sets) ...[
+          const SizedBox(height: 10),
           TextFormField(
             controller: draft.repsPerSetController,
             decoration: const InputDecoration(labelText: '每组目标次数（默认 1）'),
@@ -625,6 +647,7 @@ class _TemplateFormDialogState extends ConsumerState<TemplateFormDialog> {
               return null;
             },
           ),
+        ],
       ],
     );
     if (_exercises.length == 1) return fields;

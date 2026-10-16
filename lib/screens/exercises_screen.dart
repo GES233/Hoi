@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../database/database.dart';
 import '../providers/app_providers.dart';
+import '../theme/app_theme.dart';
 
 typedef _ExerciseTypeDraft = ({
   String name,
@@ -113,20 +114,46 @@ class ExercisesScreen extends ConsumerWidget {
                 ),
               )
             : ListView.separated(
-                padding: const EdgeInsets.symmetric(vertical: 8),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
                 itemCount: exercises.length,
-                separatorBuilder: (_, _) => const Divider(height: 1),
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
                 itemBuilder: (context, index) {
                   final exercise = exercises[index];
-                  return ListTile(
-                    leading: Icon(_categoryIcon(exercise.category)),
-                    title: Text(exercise.name),
-                    subtitle: Text(_formatSubtitle(exercise)),
-                    onTap: () => _openForm(context, ref, editing: exercise),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.archive_outlined),
-                      tooltip: '归档运动类型',
-                      onPressed: () => _confirmArchive(context, ref, exercise),
+                  final scheme = Theme.of(context).colorScheme;
+                  final accent = HoiTheme.categoryColor(
+                    scheme,
+                    exercise.category,
+                  );
+                  return Card(
+                    child: ListTile(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      leading: Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: accent.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(11),
+                        ),
+                        child: Icon(
+                          _categoryIcon(exercise.category),
+                          color: accent,
+                          size: 20,
+                        ),
+                      ),
+                      title: Text(
+                        exercise.name,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: Text(_formatSubtitle(exercise)),
+                      onTap: () => _openForm(context, ref, editing: exercise),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.archive_outlined),
+                        tooltip: '归档运动类型',
+                        onPressed: () =>
+                            _confirmArchive(context, ref, exercise),
+                      ),
                     ),
                   );
                 },
@@ -209,6 +236,7 @@ class _ExerciseTypeDialogState extends State<_ExerciseTypeDialog> {
                 validator: (value) =>
                     value == null || value.trim().isEmpty ? '请输入运动名称' : null,
               ),
+              const SizedBox(height: 10),
               DropdownButtonFormField<ExerciseCategory>(
                 initialValue: _category,
                 decoration: const InputDecoration(labelText: '类别'),
@@ -223,6 +251,7 @@ class _ExerciseTypeDialogState extends State<_ExerciseTypeDialog> {
                   () => _category = value ?? ExerciseCategory.cardio,
                 ),
               ),
+              const SizedBox(height: 10),
               DropdownButtonFormField<TrackingType>(
                 initialValue: _trackingType,
                 decoration: const InputDecoration(labelText: '记录方式'),
@@ -234,6 +263,7 @@ class _ExerciseTypeDialogState extends State<_ExerciseTypeDialog> {
                   () => _trackingType = value ?? TrackingType.duration,
                 ),
               ),
+              const SizedBox(height: 10),
               DropdownButtonFormField<LoadConvention>(
                 initialValue: _loadConvention,
                 decoration: const InputDecoration(labelText: '负重方式'),
@@ -245,7 +275,8 @@ class _ExerciseTypeDialogState extends State<_ExerciseTypeDialog> {
                   () => _loadConvention = value ?? LoadConvention.none,
                 ),
               ),
-              if (_trackingType == TrackingType.reps)
+              if (_trackingType == TrackingType.reps) ...[
+                const SizedBox(height: 10),
                 DropdownButtonFormField<RepsConvention>(
                   initialValue: _repsConvention,
                   decoration: const InputDecoration(labelText: '计数口径'),
@@ -257,6 +288,7 @@ class _ExerciseTypeDialogState extends State<_ExerciseTypeDialog> {
                     () => _repsConvention = value ?? RepsConvention.total,
                   ),
                 ),
+              ],
             ],
           ),
         ),

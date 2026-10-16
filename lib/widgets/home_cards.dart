@@ -9,6 +9,7 @@ import '../domain/rules/rule_evaluator.dart';
 import '../providers/app_providers.dart';
 import '../screens/plans_screen.dart';
 import '../screens/rules_screen.dart';
+import '../theme/app_theme.dart';
 import 'add_entry_dialogs.dart';
 
 /// 「今日方案」卡片：各方案阈值与选中日期状态、休息标记入口
@@ -55,25 +56,46 @@ class TodayPlanCard extends ConsumerWidget {
     final templatesAsync = ref.watch(workoutTemplatesProvider);
     final progressAsync = ref.watch(dailyTemplateProgressProvider);
     final rest = ref.watch(restMarkProvider).value;
+    final scheme = Theme.of(context).colorScheme;
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Text('今日方案', style: Theme.of(context).textTheme.titleMedium),
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: scheme.primaryContainer.withValues(alpha: 0.7),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    Icons.task_alt_rounded,
+                    size: 18,
+                    color: scheme.primary,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  '今日方案',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                 const Spacer(),
                 if (rest == null)
                   TextButton.icon(
-                    icon: const Icon(Icons.bedtime_outlined, size: 18),
+                    icon: const Icon(Icons.bedtime_outlined, size: 17),
                     label: const Text('今天休息'),
                     onPressed: () => _markRest(context, ref, date),
                   ),
               ],
             ),
+            const SizedBox(height: 10),
             // 加载 / 错误 / 空 / 数据 分开呈现
             if (templatesAsync.hasError || progressAsync.hasError)
               const Padding(
@@ -86,16 +108,32 @@ class TodayPlanCard extends ConsumerWidget {
                 child: Text('加载中…'),
               )
             else if (templatesAsync.value!.isEmpty)
-              Row(
-                children: [
-                  const Expanded(child: Text('尚未设置最低方案')),
-                  TextButton(
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const PlansScreen()),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.lightbulb_outline_rounded,
+                      size: 18,
+                      color: scheme.onSurfaceVariant,
                     ),
-                    child: const Text('去创建'),
-                  ),
-                ],
+                    const SizedBox(width: 10),
+                    const Expanded(child: Text('尚未设置最低方案')),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const PlansScreen()),
+                      ),
+                      child: const Text('去创建'),
+                    ),
+                  ],
+                ),
               )
             else
               for (final summary in templatesAsync.value!)
@@ -103,24 +141,39 @@ class TodayPlanCard extends ConsumerWidget {
                   summary: summary,
                   progress: progressAsync.value?[summary.template.id],
                 ),
-            if (rest != null)
-              Row(
-                children: [
-                  const Icon(Icons.bedtime, size: 16),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      '已标记休息'
-                      '${rest.note != null && rest.note!.isNotEmpty ? '：${rest.note}' : ''}',
+            if (rest != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: scheme.secondaryContainer.withValues(alpha: 0.45),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.bedtime, size: 16, color: scheme.secondary),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '已标记休息'
+                        '${rest.note != null && rest.note!.isNotEmpty ? '：${rest.note}' : ''}',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: scheme.onSecondaryContainer,
+                        ),
+                      ),
                     ),
-                  ),
-                  TextButton(
-                    onPressed: () =>
-                        ref.read(databaseProvider).removeRestMark(date),
-                    child: const Text('取消休息'),
-                  ),
-                ],
+                    TextButton(
+                      onPressed: () =>
+                          ref.read(databaseProvider).removeRestMark(date),
+                      child: const Text('取消休息'),
+                    ),
+                  ],
+                ),
               ),
+            ],
           ],
         ),
       ),
@@ -145,32 +198,94 @@ class _TemplateProgressRow extends ConsumerWidget {
         : definition.exercises.length == 1
         ? '${definition.exercises.single.exerciseNameSnapshot} · ${describeTemplateThresholds(definition)}'
         : '${definition.exercises.length} 个动作 · ${definition.sets.length} 个计划组';
-    final status = switch (progress?.tier) {
-      null => Text('未开始', style: TextStyle(color: scheme.onSurfaceVariant)),
-      PlanTier.belowMin => Text(
-        '已记录 ${progress!.regularCompleted}/${progress!.regularTotal} 组',
-        style: TextStyle(color: scheme.onSurfaceVariant),
+
+    final tier = progress?.tier;
+    final isDone = tier == PlanTier.min || tier == PlanTier.regular;
+
+    final status = switch (tier) {
+      null => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(
+          '未开始',
+          style: Theme.of(
+            context,
+          ).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
+        ),
       ),
-      PlanTier.min => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.check, size: 16, color: scheme.primary),
-          const SizedBox(width: 4),
-          const Text('最低完成'),
-        ],
+      PlanTier.belowMin => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: scheme.secondaryContainer.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(
+          '已记录 ${progress!.regularCompleted}/${progress!.regularTotal} 组',
+          style: Theme.of(
+            context,
+          ).textTheme.labelSmall?.copyWith(color: scheme.onSecondaryContainer),
+        ),
       ),
-      PlanTier.regular => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.check_circle, size: 16, color: scheme.primary),
-          const SizedBox(width: 4),
-          const Text('常规完成'),
-        ],
+      PlanTier.min => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: scheme.primary.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.check, size: 15, color: scheme.primary),
+            const SizedBox(width: 4),
+            Text(
+              '最低完成',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: scheme.primary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+      PlanTier.regular => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: scheme.primary.withValues(alpha: 0.18),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.check_circle, size: 15, color: scheme.primary),
+            const SizedBox(width: 4),
+            Text(
+              '常规完成',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: scheme.primary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
       ),
       PlanTier.none => const SizedBox.shrink(),
     };
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: isDone
+            ? scheme.primaryContainer.withValues(alpha: 0.3)
+            : scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+        border: isDone
+            ? Border.all(color: scheme.primary.withValues(alpha: 0.25))
+            : null,
+      ),
       child: Row(
         children: [
           Expanded(
@@ -179,12 +294,21 @@ class _TemplateProgressRow extends ConsumerWidget {
               children: [
                 Text(
                   summary.version.name,
-                  style: Theme.of(context).textTheme.titleSmall,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
                 ),
-                Text(subtitle, style: Theme.of(context).textTheme.labelSmall),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
               ],
             ),
           ),
+          const SizedBox(width: 8),
           status,
         ],
       ),
@@ -206,15 +330,36 @@ class RuleGoalsCard extends ConsumerWidget {
         : ref.watch(ruleSetProgressForDateProvider(date!));
     final exercises = ref.watch(exercisesProvider).value ?? const <Exercise>[];
     final exerciseNames = {for (final e in exercises) e.id: e.name};
+    final scheme = Theme.of(context).colorScheme;
+
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Text('周期目标', style: Theme.of(context).textTheme.titleMedium),
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: scheme.tertiaryContainer.withValues(alpha: 0.7),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    Icons.flag_rounded,
+                    size: 18,
+                    color: scheme.tertiary,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  '周期目标',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                 const Spacer(),
                 IconButton(
                   tooltip: '管理周期目标',
@@ -225,6 +370,7 @@ class RuleGoalsCard extends ConsumerWidget {
                 ),
               ],
             ),
+            const SizedBox(height: 8),
             progressAsync.when(
               loading: () => const Padding(
                 padding: EdgeInsets.symmetric(vertical: 12),
@@ -235,9 +381,20 @@ class RuleGoalsCard extends ConsumerWidget {
                 child: Text('周期目标加载失败'),
               ),
               data: (items) => items.isEmpty
-                  ? const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                      child: Text('当前日期没有生效的周期目标'),
+                  ? Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: scheme.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '当前日期没有生效的周期目标',
+                        style: TextStyle(color: scheme.onSurfaceVariant),
+                      ),
                     )
                   : Column(
                       children: [
@@ -304,30 +461,78 @@ class RuleGoalsCard extends ConsumerWidget {
       ];
     }
     final details = leaves
-        .map(
-          (pair) => _formatRuleCondition(pair.$1, pair.$2, exerciseNames),
-        )
+        .map((pair) => _formatRuleCondition(pair.$1, pair.$2, exerciseNames))
         .join(' · ');
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: Row(
+
+    // 计算可视化完成度条（0..1）
+    double? ratio;
+    if (leaves.isNotEmpty) {
+      final ratios = <double>[];
+      for (final (_, leafEval) in leaves) {
+        final a = leafEval.actual;
+        final t = leafEval.target;
+        if (a != null && t != null && t > 0) {
+          ratios.add((a / t).clamp(0.0, 1.0));
+        }
+      }
+      if (ratios.isNotEmpty) {
+        ratio = ratios.reduce((a, b) => a + b) / ratios.length;
+      }
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: evaluation.status == RuleResultStatus.passed
+            ? scheme.primaryContainer.withValues(alpha: 0.3)
+            : scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 18, color: color),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item.ruleSet.name,
-                  style: Theme.of(context).textTheme.titleSmall,
+          Row(
+            children: [
+              Icon(icon, size: 18, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.ruleSet.name,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (details.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        details,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
-                if (details.isNotEmpty)
-                  Text(details, style: Theme.of(context).textTheme.labelSmall),
-              ],
-            ),
+              ),
+              HoiPill(label: label, color: color),
+            ],
           ),
-          Text(label, style: TextStyle(color: color)),
+          if (ratio != null) ...[
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                value: ratio,
+                minHeight: 5,
+                backgroundColor: scheme.surfaceContainerHighest,
+                valueColor: AlwaysStoppedAnimation<Color>(color),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -397,15 +602,35 @@ class FoodSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Text('饮食记录', style: Theme.of(context).textTheme.titleMedium),
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: scheme.secondaryContainer.withValues(alpha: 0.7),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    Icons.restaurant_rounded,
+                    size: 18,
+                    color: scheme.secondary,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  '饮食记录',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                 const Spacer(),
                 TextButton.icon(
                   icon: const Icon(Icons.add, size: 18),
@@ -414,6 +639,7 @@ class FoodSection extends ConsumerWidget {
                 ),
               ],
             ),
+            const SizedBox(height: 8),
             // 加载 / 错误 / 空 / 数据 分开呈现
             if (entriesAsync.hasError)
               const Padding(
@@ -438,13 +664,29 @@ class FoodSection extends ConsumerWidget {
     WidgetRef ref,
     List<FoodEntry> entries,
   ) {
+    final scheme = Theme.of(context).colorScheme;
     final total = entries.fold<int>(0, (sum, e) => sum + e.calories);
     return [
-      Text('当日摄入 $total kcal', style: Theme.of(context).textTheme.labelSmall),
+      HoiPill(
+        icon: Icons.local_fire_department_outlined,
+        label: '当日摄入 $total kcal',
+        color: scheme.secondary,
+      ),
       if (entries.isEmpty)
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 12),
-          child: Text('暂无记录'),
+        Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              '暂无记录',
+              style: TextStyle(color: scheme.onSurfaceVariant),
+            ),
+          ),
         )
       else
         for (final mealType in MealType.values)
@@ -460,19 +702,51 @@ class FoodSection extends ConsumerWidget {
   ) {
     final group = entries.where((e) => e.mealType == mealType).toList();
     if (group.isEmpty) return const [];
+    final scheme = Theme.of(context).colorScheme;
     return [
-      const Divider(),
-      Text(mealType.label, style: Theme.of(context).textTheme.titleSmall),
+      const SizedBox(height: 10),
+      Row(
+        children: [
+          Icon(
+            HoiTheme.mealIcon(mealType),
+            size: 16,
+            color: scheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            mealType.label,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 4),
       for (final e in group)
-        ListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: Text(e.name),
-          subtitle: Text('${e.calories} kcal'),
-          trailing: IconButton(
-            icon: const Icon(Icons.delete_outline),
-            tooltip: '删除',
-            onPressed: () => ref.read(databaseProvider).deleteFoodEntry(e.id),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: Material(
+            color: scheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(10),
+            child: ListTile(
+              dense: true,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              contentPadding: const EdgeInsets.only(left: 12, right: 4),
+              title: Text(
+                e.name,
+                style: const TextStyle(fontWeight: FontWeight.w500),
+              ),
+              subtitle: Text('${e.calories} kcal'),
+              trailing: IconButton(
+                icon: const Icon(Icons.delete_outline, size: 19),
+                tooltip: '删除',
+                onPressed: () =>
+                    ref.read(databaseProvider).deleteFoodEntry(e.id),
+              ),
+            ),
           ),
         ),
     ];

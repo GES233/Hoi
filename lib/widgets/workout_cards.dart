@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../database/database.dart';
 import '../providers/app_providers.dart';
+import '../theme/app_theme.dart';
 import 'set_stopwatch.dart';
 import 'workout_dialogs.dart';
 
@@ -48,41 +49,71 @@ class PlanProgressCard extends ConsumerWidget {
 
     final scheme = Theme.of(context).colorScheme;
     Widget statusLine(String label, int completed, int total, bool done) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text('$label计划组'),
-          const SizedBox(width: 8),
-          if (done)
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.check, size: 16, color: scheme.primary),
-                const SizedBox(width: 2),
-                const Text('已完成'),
-              ],
-            )
-          else
+      return Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
             Text(
-              '$completed / $total 组',
-              style: TextStyle(color: scheme.onSurfaceVariant),
+              '$label计划组',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
             ),
-        ],
+            const SizedBox(width: 8),
+            if (done)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.check, size: 16, color: scheme.primary),
+                  const SizedBox(width: 2),
+                  Text(
+                    '已完成',
+                    style: TextStyle(
+                      color: scheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              )
+            else
+              Text(
+                '$completed / $total 组',
+                style: TextStyle(color: scheme.onSurfaceVariant),
+              ),
+          ],
+        ),
       );
     }
 
     return Card(
-      color: minDone ? scheme.primaryContainer : null,
+      color: minDone ? scheme.primaryContainer.withValues(alpha: 0.55) : null,
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              '关联方案：${workout.templateNameSnapshot ?? ''}',
-              style: Theme.of(context).textTheme.titleSmall,
+            Row(
+              children: [
+                Icon(
+                  minDone
+                      ? Icons.verified_rounded
+                      : Icons.assignment_outlined,
+                  size: 18,
+                  color: scheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '关联方案：${workout.templateNameSnapshot ?? ''}',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 6),
             if (progressAsync.hasError)
               const Text('进度加载失败')
             else if (progress == null)
@@ -273,6 +304,8 @@ class ExerciseCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final accentColor = HoiTheme.categoryColor(scheme, exercise.category);
     final isTimingThis = timingExerciseId == exercise.id;
     final isTimingOther = timingExerciseId != null && !isTimingThis;
     final exerciseSets = sets
@@ -288,28 +321,41 @@ class ExerciseCard extends ConsumerWidget {
         .length;
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: accentColor.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    HoiTheme.categoryIcon(exercise.category),
+                    size: 18,
+                    color: accentColor,
+                  ),
+                ),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Row(
                     children: [
                       Flexible(
                         child: Text(
                           exercise.name,
-                          style: Theme.of(context).textTheme.titleSmall,
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w700),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      const SizedBox(width: 6),
-                      Text(
-                        exercise.category.label,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
+                      const SizedBox(width: 8),
+                      HoiPill(
+                        label: exercise.category.label,
+                        color: accentColor,
                       ),
                     ],
                   ),
@@ -327,23 +373,33 @@ class ExerciseCard extends ConsumerWidget {
                 ),
               ],
             ),
-            if (exerciseSets.isNotEmpty)
-              Text(
-                _summarizeSets(exerciseSets),
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (exerciseSets.isNotEmpty)
+                  Text(
+                    _summarizeSets(exerciseSets),
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                Text(
+                  templateExerciseId != null
+                      ? '计划动作 · 已记录 $linkedPlannedCount/${plannedSets.length} 个计划组'
+                      : hasTemplate
+                      ? '计划外动作'
+                      : '自由动作',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
-              ),
-            Text(
-              templateExerciseId != null
-                  ? '计划动作 · 已记录 $linkedPlannedCount/${plannedSets.length} 个计划组'
-                  : hasTemplate
-                  ? '计划外动作'
-                  : '自由动作',
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
+              ],
             ),
+            if (exerciseSets.isNotEmpty) const SizedBox(height: 8),
             for (var i = 0; i < exerciseSets.length; i++)
               _setRow(context, ref, exerciseSets[i], i, plannedSets),
             if (plannedSets.length > linkedPlannedCount)
@@ -351,11 +407,12 @@ class ExerciseCard extends ConsumerWidget {
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Text(
                   '尚有 ${plannedSets.length - linkedPlannedCount} 个计划组未记录',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
                   ),
                 ),
               ),
+            const SizedBox(height: 4),
             // 计时的组变成高亮条，计时期间隐藏「添加组」避免一行挤四个控件
             if (isTimingThis)
               _timingBar(context, exerciseSets.length + 1)
@@ -400,6 +457,7 @@ class ExerciseCard extends ConsumerWidget {
     int index,
     List<TemplateSet> plannedSets,
   ) {
+    final scheme = Theme.of(context).colorScheme;
     final planned = set.templateSetId == null
         ? null
         : plannedSets
@@ -414,29 +472,39 @@ class ExerciseCard extends ConsumerWidget {
         : _meetsPlannedTarget(set, planned)
         ? '计划组 · 已完成'
         : '计划组 · 未达目标';
-    return Dismissible(
-      key: ValueKey('set-${set.id}'),
-      direction: DismissDirection.endToStart,
-      background: Container(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 12),
-        color: Theme.of(context).colorScheme.errorContainer,
-        child: Icon(
-          Icons.delete_outline,
-          color: Theme.of(context).colorScheme.onErrorContainer,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Dismissible(
+        key: ValueKey('set-${set.id}'),
+        direction: DismissDirection.endToStart,
+        background: Container(
+          alignment: Alignment.centerRight,
+          padding: const EdgeInsets.only(right: 12),
+          decoration: BoxDecoration(
+            color: scheme.errorContainer,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(Icons.delete_outline, color: scheme.onErrorContainer),
         ),
-      ),
-      onDismissed: (_) => _deleteSetWithUndo(context, ref, set),
-      child: ListTile(
-        dense: true,
-        contentPadding: EdgeInsets.zero,
-        title: Text('第 ${index + 1} 组　$relation　${describeSet(set)}'),
-        trailing: Icon(
-          Icons.edit_outlined,
-          size: 16,
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        onDismissed: (_) => _deleteSetWithUndo(context, ref, set),
+        child: Material(
+          color: scheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(10),
+          child: ListTile(
+            dense: true,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+            title: Text('第 ${index + 1} 组　$relation　${describeSet(set)}'),
+            trailing: Icon(
+              Icons.edit_outlined,
+              size: 16,
+              color: scheme.onSurfaceVariant,
+            ),
+            onTap: () => _editSet(ref, set),
+          ),
         ),
-        onTap: () => _editSet(ref, set),
       ),
     );
   }

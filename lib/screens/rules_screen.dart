@@ -150,9 +150,31 @@ class RulesScreen extends ConsumerWidget {
                       ? '${DateFormat('yyyy-MM-dd').format(rule.effectiveFromDate)} 起'
                       : '${DateFormat('yyyy-MM-dd').format(rule.effectiveFromDate)} 至 '
                             '${DateFormat('yyyy-MM-dd').format(until)}';
+                  final scheme = Theme.of(context).colorScheme;
                   return Card(
                     child: ListTile(
-                      title: Text(rule.name),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      leading: Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: scheme.tertiaryContainer.withValues(
+                            alpha: 0.7,
+                          ),
+                          borderRadius: BorderRadius.circular(11),
+                        ),
+                        child: Icon(
+                          Icons.flag_outlined,
+                          size: 20,
+                          color: scheme.tertiary,
+                        ),
+                      ),
+                      title: Text(
+                        rule.name,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
                       subtitle: Text(
                         '${rule.period.label} · ${rule.combineMode.label}\n$dateRange',
                       ),
@@ -522,6 +544,7 @@ class _ConditionEditor extends StatelessWidget {
                 ),
               ],
             ),
+            const SizedBox(height: 8),
             DropdownButtonFormField<String>(
               initialValue: draft.metricId,
               decoration: const InputDecoration(labelText: '指标'),
@@ -541,6 +564,7 @@ class _ConditionEditor extends StatelessWidget {
                 onChanged();
               },
             ),
+            const SizedBox(height: 10),
             DropdownButtonFormField<int?>(
               initialValue: draft.exerciseId,
               decoration: const InputDecoration(labelText: '动作过滤（可选）'),
@@ -562,6 +586,7 @@ class _ConditionEditor extends StatelessWidget {
                 onChanged();
               },
             ),
+            const SizedBox(height: 10),
             Row(
               children: [
                 Expanded(
@@ -607,6 +632,7 @@ class _ConditionEditor extends StatelessWidget {
                 ),
               ],
             ),
+            const SizedBox(height: 10),
             Row(
               children: [
                 Expanded(

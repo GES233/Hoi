@@ -24,6 +24,7 @@ class _WorkoutTimelineCardState extends ConsumerState<WorkoutTimelineCard> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final DateTime date = widget.date ?? ref.watch(selectedDateProvider);
     final workoutsAsync = widget.date == null
         ? ref.watch(weekTimelineWorkoutsProvider)
@@ -54,13 +55,44 @@ class _WorkoutTimelineCardState extends ConsumerState<WorkoutTimelineCard> {
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Text('运动时段', style: Theme.of(context).textTheme.titleMedium),
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: scheme.primaryContainer.withValues(alpha: 0.7),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    Icons.schedule_rounded,
+                    size: 18,
+                    color: scheme.primary,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '运动时段',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      '${intl.DateFormat('M月d日').format(weekStart)} – '
+                      '${intl.DateFormat('M月d日').format(weekStart.add(const Duration(days: 6)))}',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
                 const Spacer(),
                 IconButton(
                   tooltip: _expanded ? '收起时间轴' : '展开完整时间轴',
@@ -70,11 +102,6 @@ class _WorkoutTimelineCardState extends ConsumerState<WorkoutTimelineCard> {
                       : () => setState(() => _expanded = !_expanded),
                 ),
               ],
-            ),
-            Text(
-              '${intl.DateFormat('M月d日').format(weekStart)} – '
-              '${intl.DateFormat('M月d日').format(weekStart.add(const Duration(days: 6)))}',
-              style: Theme.of(context).textTheme.labelSmall,
             ),
             const SizedBox(height: 12),
             if (workoutsAsync.hasError)
@@ -88,13 +115,19 @@ class _WorkoutTimelineCardState extends ConsumerState<WorkoutTimelineCard> {
                 child: Text('加载中…'),
               )
             else if (segments.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  vertical: 14,
+                  horizontal: 14,
+                ),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 child: Text(
                   '本周暂无带时间的训练',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                  style: TextStyle(color: scheme.onSurfaceVariant),
                 ),
               )
             else
@@ -188,7 +221,9 @@ class _WorkoutTimeline extends StatelessWidget {
                     '${const ['一', '二', '三', '四', '五', '六', '日'][i]}\n'
                     '${weekStart.add(Duration(days: i)).day}',
                     textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.labelSmall,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
             ],
@@ -208,7 +243,7 @@ class _WorkoutTimeline extends StatelessWidget {
                     child: CustomPaint(
                       painter: _TimelineGridPainter(
                         gutter: _gutter,
-                        color: scheme.outlineVariant,
+                        color: scheme.outlineVariant.withValues(alpha: 0.55),
                         textColor: scheme.onSurfaceVariant,
                         visibleStartMinute: visibleStartMinute,
                       ),
@@ -272,8 +307,8 @@ class _WorkoutTimeline extends StatelessWidget {
             onTap: () => _showDetails(context, segment.entry),
             child: DecoratedBox(
               decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.82),
-                borderRadius: BorderRadius.circular(3),
+                color: color.withValues(alpha: 0.85),
+                borderRadius: BorderRadius.circular(5),
                 border: Border.all(color: color),
               ),
             ),

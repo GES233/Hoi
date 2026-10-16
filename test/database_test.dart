@@ -896,5 +896,53 @@ void main() {
         directory.deleteSync(recursive: true);
       }
     });
+
+    test('补记训练关联方案时自动绑定计划动作与计划组，取消关联时一并清理', () async {
+      final pushupId = await addCatalogExercise('俯卧撑', TrackingType.reps);
+      final definition = await createTemplate(
+        name: '俯卧撑两组',
+        exercises: [
+          TemplateExerciseInput(
+            exerciseId: pushupId,
+            sets: const [
+              TemplateSetInput(reps: 10, minimumReps: 5),
+              TemplateSetInput(reps: 10),
+            ],
+          ),
+        ],
+      );
+
+      // 模拟补记：先插入训练、动作和组（未传 templateExerciseId / templateSetId），再关联方案
+      final workoutId = await db.insertCompletedWorkout(
+        startedAt: t0,
+        endedAt: t0.add(const Duration(minutes: 20)),
+      );
+      final exerciseId = await db.addWorkoutExercise(
+        workoutId,
+        name: '俯卧撑',
+        category: ExerciseCategory.resistance,
+        catalogExerciseId: pushupId,
+        trackingType: TrackingType.reps,
+      );
+      await db.addWorkoutSet(exerciseId, reps: 10);
+      await db.addWorkoutSet(exerciseId, reps: 10);
+      await db.linkTemplateToWorkout(workoutId, definition.version);
+
+      final progress = await db.evaluateWorkoutTemplate(workoutId);
+      expect(progress.tier, PlanTier.regular);
+      expect(progress.regularCompleted, 2);
+      expect(progress.minimumCompleted, 1);
+
+      final weekStatuses = await db.watchWeekDailyStatus(t0).first;
+      expect(weekStatuses[AppDatabase.dateOnly(t0)], DailyStatus.regularDone);
+
+      // 取消方案关联后，动作与组上的计划槽位引用应一并清空
+      await db.clearTemplateLink(workoutId);
+      final afterExercises = await db.getWorkoutExercises(workoutId);
+      final afterSets = await db.getWorkoutSets(workoutId);
+      expect(afterExercises.single.templateExerciseId, isNull);
+      expect(afterSets.every((s) => s.templateSetId == null), isTrue);
+      expect((await db.evaluateWorkoutTemplate(workoutId)).tier, PlanTier.none);
+    });
   });
 }

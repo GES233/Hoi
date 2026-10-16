@@ -330,4 +330,29 @@ void main() {
       throwsFormatException,
     );
   });
+
+  test('跨动作汇总指标不会因其他口径动作未填该字段而误判数据不足', () {
+    // context 的场次同时包含「抗阻（按次数）」和「心肺（按时长）」动作，
+    // 在不指定 exerciseId 过滤时统计全周 duration 与 reps 应正常汇总对应口径动作。
+    final totalDuration = evaluator.evaluate(
+      const ComparisonRule(
+        metricId: 'duration',
+        operator: ComparisonOperator.greaterOrEqual,
+        target: 1800,
+      ),
+      context,
+    );
+    final totalReps = evaluator.evaluate(
+      const ComparisonRule(
+        metricId: 'reps',
+        operator: ComparisonOperator.greaterOrEqual,
+        target: 30,
+      ),
+      context,
+    );
+    expect(totalDuration.status, RuleResultStatus.passed);
+    expect(totalDuration.actual, 1800);
+    expect(totalReps.status, RuleResultStatus.passed);
+    expect(totalReps.actual, 30);
+  });
 }

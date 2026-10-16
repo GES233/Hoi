@@ -251,23 +251,154 @@ extension TemplateDao on AppDatabase {
     int workoutId,
     TemplateVersion version,
   ) async {
-    await (update(workouts)..where((w) => w.id.equals(workoutId))).write(
-      WorkoutsCompanion(
-        templateVersionId: Value(version.id),
-        templateNameSnapshot: Value(version.name),
-        templateEvaluationPolicyVersion: const Value(1),
-      ),
-    );
+    await transaction(() async {
+      await (update(workouts)..where((w) => w.id.equals(workoutId))).write(
+        WorkoutsCompanion(
+          templateVersionId: Value(version.id),
+          templateNameSnapshot: Value(version.name),
+          templateEvaluationPolicyVersion: const Value(1),
+        ),
+      );
+      final plannedExercises =
+          await (select(templateExercises)
+                ..where((e) => e.templateVersionId.equals(version.id))
+                ..orderBy([(e) => OrderingTerm.asc(e.sortOrder)]))
+              .get();
+      final plannedExerciseIds = plannedExercises.map((e) => e.id).toSet();
+      final plannedSets = plannedExerciseIds.isEmpty
+          ? const <TemplateSet>[]
+          : await (select(templateSets)
+                  ..where((s) => s.templateExerciseId.isIn(plannedExerciseIds))
+                  ..orderBy([(s) => OrderingTerm.asc(s.sortOrder)]))
+                .get();
+      final plannedSetsByExercise = <int, List<TemplateSet>>{};
+      for (final s in plannedSets) {
+        (plannedSetsByExercise[s.templateExerciseId] ??= []).add(s);
+      }
+
+      final actualExercises = await getWorkoutExercises(workoutId);
+      final usedPlannedExercises = <int>{};
+      final resolvedExerciseLink = <int, int?>{};
+
+      // 保留已指向当前模板版本的动作关联
+      for (final actual in actualExercises) {
+        final linkedId = actual.templateExerciseId;
+        if (linkedId != null &&
+            plannedExerciseIds.contains(linkedId) &&
+            !usedPlannedExercises.contains(linkedId)) {
+          usedPlannedExercises.add(linkedId);
+          resolvedExerciseLink[actual.id] = linkedId;
+        }
+      }
+
+      // 为尚未关联（或关联了旧模板版本）的动作按动作 ID 或快照名称顺序匹配计划动作
+      for (final actual in actualExercises) {
+        if (resolvedExerciseLink.containsKey(actual.id)) continue;
+        final matched = plannedExercises.cast<TemplateExercise?>().firstWhere(
+          (planned) =>
+              !usedPlannedExercises.contains(planned!.id) &&
+              ((actual.catalogExerciseId != null &&
+                      planned.exerciseId == actual.catalogExerciseId) ||
+                  (actual.catalogExerciseId == null &&
+                      planned.exerciseNameSnapshot == actual.name)),
+          orElse: () => null,
+        );
+        final nextTemplateExerciseId = matched?.id;
+        resolvedExerciseLink[actual.id] = nextTemplateExerciseId;
+        if (nextTemplateExerciseId != null) {
+          usedPlannedExercises.add(nextTemplateExerciseId);
+        }
+        if (actual.templateExerciseId != nextTemplateExerciseId) {
+          await (update(
+            workoutExercises,
+          )..where((e) => e.id.equals(actual.id))).write(
+            WorkoutExercisesCompanion(
+              templateExerciseId: Value(nextTemplateExerciseId),
+            ),
+          );
+        }
+      }
+
+      // 同步每个动作下的计划组槽位关联
+      for (final actual in actualExercises) {
+        final plannedExerciseId = resolvedExerciseLink[actual.id];
+        final actualSets =
+            await (select(workoutSets)
+                  ..where((s) => s.exerciseId.equals(actual.id))
+                  ..orderBy([(s) => OrderingTerm.asc(s.sortOrder)]))
+                .get();
+        if (plannedExerciseId == null) {
+          if (actualSets.any((s) => s.templateSetId != null)) {
+            await (update(
+              workoutSets,
+            )..where((s) => s.exerciseId.equals(actual.id))).write(
+              const WorkoutSetsCompanion(templateSetId: Value(null)),
+            );
+          }
+          continue;
+        }
+        final candidates =
+            plannedSetsByExercise[plannedExerciseId] ?? const <TemplateSet>[];
+        final candidateIds = candidates.map((s) => s.id).toSet();
+        final usedSetIds = <int>{};
+        for (final set in actualSets) {
+          final currentId = set.templateSetId;
+          if (currentId != null &&
+              candidateIds.contains(currentId) &&
+              !usedSetIds.contains(currentId)) {
+            usedSetIds.add(currentId);
+          }
+        }
+        for (final set in actualSets) {
+          final currentId = set.templateSetId;
+          if (currentId != null && candidateIds.contains(currentId)) continue;
+          final matchedSet = candidates.cast<TemplateSet?>().firstWhere(
+            (c) => !usedSetIds.contains(c!.id),
+            orElse: () => null,
+          );
+          final nextSetId = matchedSet?.id;
+          if (nextSetId != null) usedSetIds.add(nextSetId);
+          if (currentId != nextSetId) {
+            await (update(
+              workoutSets,
+            )..where((s) => s.id.equals(set.id))).write(
+              WorkoutSetsCompanion(templateSetId: Value(nextSetId)),
+            );
+          }
+        }
+      }
+    });
   }
 
-  Future<void> clearTemplateLink(int workoutId) =>
-      (update(workouts)..where((w) => w.id.equals(workoutId))).write(
+  Future<void> clearTemplateLink(int workoutId) async {
+    await transaction(() async {
+      await (update(workouts)..where((w) => w.id.equals(workoutId))).write(
         const WorkoutsCompanion(
           templateVersionId: Value(null),
           templateNameSnapshot: Value(null),
           templateEvaluationPolicyVersion: Value(null),
         ),
       );
+      final exerciseIds =
+          await (selectOnly(workoutExercises)
+                ..addColumns([workoutExercises.id])
+                ..where(workoutExercises.workoutId.equals(workoutId)))
+              .map((row) => row.read(workoutExercises.id)!)
+              .get();
+      if (exerciseIds.isNotEmpty) {
+        await (update(
+          workoutSets,
+        )..where((s) => s.exerciseId.isIn(exerciseIds))).write(
+          const WorkoutSetsCompanion(templateSetId: Value(null)),
+        );
+        await (update(
+          workoutExercises,
+        )..where((e) => e.workoutId.equals(workoutId))).write(
+          const WorkoutExercisesCompanion(templateExerciseId: Value(null)),
+        );
+      }
+    });
+  }
 
   Future<TemplateProgress> evaluateWorkoutTemplate(int workoutId) async {
     final workout = await getWorkout(workoutId);
@@ -296,10 +427,17 @@ extension TemplateDao on AppDatabase {
       );
     }
     final actualSets = await getWorkoutSets(workoutId);
+    return _evaluateSetsAgainstPlanned(definition.sets, actualSets);
+  }
+
+  static TemplateProgress _evaluateSetsAgainstPlanned(
+    List<TemplateSet> plannedSets,
+    List<WorkoutSet> actualSets,
+  ) {
     var minimumCompleted = 0;
     var minimumTotal = 0;
     var regularCompleted = 0;
-    for (final planned in definition.sets) {
+    for (final planned in plannedSets) {
       final candidates = actualSets.where(
         (actual) =>
             actual.templateSetId == planned.id &&
@@ -315,7 +453,7 @@ extension TemplateDao on AppDatabase {
         }
       }
     }
-    final regularTotal = definition.sets.length;
+    final regularTotal = plannedSets.length;
     final tier = regularTotal > 0 && regularCompleted == regularTotal
         ? PlanTier.regular
         : minimumTotal > 0 && minimumCompleted == minimumTotal

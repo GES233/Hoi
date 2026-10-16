@@ -250,7 +250,8 @@ class _RuleSetFormDialogState extends ConsumerState<RuleSetFormDialog> {
     _period = editing?.period ?? RulePeriod.week;
     _combineMode = editing?.combineMode ?? RuleCombineMode.all;
     _effectiveFrom =
-        editing?.effectiveFromDate ?? AppDatabase.dateOnly(DateTime.now());
+        editing?.effectiveFromDate ??
+        AppDatabase.dateOnly(ref.read(appClockProvider)());
     _effectiveUntil = editing?.effectiveUntilDate;
     final expression = widget.expression;
     final children = switch (expression) {

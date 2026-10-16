@@ -5,42 +5,92 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../database/database.dart';
 import '../providers/app_providers.dart';
 
-PlanMetric _shortcutMetric(WorkoutTemplateDefinition definition) =>
-    definition.exercises.single.trackingTypeSnapshot == TrackingType.duration
-    ? PlanMetric.duration
-    : PlanMetric.sets;
+PlanMetric _metricForTracking(TrackingType tracking) => switch (tracking) {
+  TrackingType.duration => PlanMetric.duration,
+  TrackingType.reps => PlanMetric.sets,
+  TrackingType.distance => PlanMetric.distance,
+};
 
-bool _isShortcutTemplate(WorkoutTemplateDefinition definition) {
-  if (definition.exercises.length != 1 || definition.sets.isEmpty) return false;
-  final tracking = definition.exercises.single.trackingTypeSnapshot;
-  if (tracking == TrackingType.duration) {
-    return definition.sets.length == 1 &&
-        definition.sets.single.durationSeconds != null;
+TrackingType _trackingForMetric(PlanMetric metric) => switch (metric) {
+  PlanMetric.duration => TrackingType.duration,
+  PlanMetric.sets => TrackingType.reps,
+  PlanMetric.distance => TrackingType.distance,
+};
+
+/// 单个模板动作的最低／常规描述。
+String describeExerciseThresholds(
+  TemplateExercise exercise,
+  List<TemplateSet> sets,
+) {
+  final metric = _metricForTracking(exercise.trackingTypeSnapshot);
+  switch (metric) {
+    case PlanMetric.duration:
+      final hasMin = sets.any(
+        (s) => s.minimumDurationSeconds != null && s.minimumDurationSeconds! > 0,
+      );
+      final minimum = hasMin
+          ? sets.fold<int>(0, (sum, s) => sum + (s.minimumDurationSeconds ?? 0))
+          : null;
+      final regular = sets.fold<int>(
+        0,
+        (sum, s) => sum + (s.durationSeconds ?? 0),
+      );
+      String format(int value) => '${value ~/ 60} 分钟';
+      final minimumText = minimum == null || minimum == 0
+          ? '未设置最低量'
+          : '最低 ${format(minimum)}';
+      return '$minimumText / 常规 ${format(regular)}';
+    case PlanMetric.distance:
+      final hasMin = sets.any(
+        (s) => s.minimumDistanceMeters != null && s.minimumDistanceMeters! > 0,
+      );
+      final minimum = hasMin
+          ? sets
+                .fold<double>(
+                  0,
+                  (sum, s) => sum + (s.minimumDistanceMeters ?? 0),
+                )
+                .round()
+          : null;
+      final regular = sets
+          .fold<double>(0, (sum, s) => sum + (s.distanceMeters ?? 0))
+          .round();
+      String format(int value) => '$value 米';
+      final minimumText = minimum == null || minimum == 0
+          ? '未设置最低量'
+          : '最低 ${format(minimum)}';
+      return '$minimumText / 常规 ${format(regular)}';
+    case PlanMetric.sets:
+      final minimum = sets
+          .where((set) => set.minimumReps != null && set.minimumReps! > 0)
+          .length;
+      final regular = sets.length;
+      final minimumText = minimum == 0 ? '未设置最低量' : '最低 $minimum 组';
+      final repsPerSet = sets.isEmpty ? 1 : (sets.first.reps ?? 1);
+      final allSameReps = sets.every((s) => (s.reps ?? 1) == repsPerSet);
+      final regularText = allSameReps && repsPerSet > 1
+          ? '$regular 组 × $repsPerSet 次'
+          : '$regular 组';
+      return '$minimumText / 常规 $regularText';
   }
-  if (tracking == TrackingType.reps) {
-    return definition.sets.every((set) => set.reps == 1);
-  }
-  return false;
 }
 
-/// 单动作快捷模板的最低／常规描述。
+/// 模板的最低／常规描述（兼容单动作与多动作模板）。
 String describeTemplateThresholds(WorkoutTemplateDefinition definition) {
-  final metric = _shortcutMetric(definition);
-  final minimum = metric == PlanMetric.duration
-      ? definition.sets.single.minimumDurationSeconds
-      : definition.sets.where((set) => set.minimumReps != null).length;
-  final regular = metric == PlanMetric.duration
-      ? definition.sets.single.durationSeconds!
-      : definition.sets.length;
-  String format(int value) =>
-      metric == PlanMetric.duration ? '${value ~/ 60} 分钟' : '$value 组';
-  final minimumText = minimum == null || minimum == 0
-      ? '未设置最低量'
-      : '最低 ${format(minimum)}';
-  return '$minimumText / 常规 ${format(regular)}';
+  if (definition.exercises.isEmpty) return '';
+  if (definition.exercises.length == 1) {
+    return describeExerciseThresholds(
+      definition.exercises.single,
+      definition.sets,
+    );
+  }
+  return [
+    for (final ex in definition.exercises)
+      '${ex.exerciseNameSnapshot}（${describeExerciseThresholds(ex, definition.sets.where((s) => s.templateExerciseId == ex.id).toList())}）',
+  ].join(' · ');
 }
 
-/// 方案管理页目前提供单动作模板快捷编辑；底层模型支持多动作、多计划组。
+/// 方案管理页：支持单动作与多动作模板、以及按时长/组数/距离三种口径编辑。
 class PlansScreen extends ConsumerWidget {
   const PlansScreen({super.key});
 
@@ -82,11 +132,6 @@ class PlansScreen extends ConsumerWidget {
         .read(databaseProvider)
         .getTemplateDefinition(summary.template.id);
     if (!context.mounted || definition == null) return;
-    if (!_isShortcutTemplate(definition)) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('多动作模板将在完整模板编辑器中开放编辑')));
-      return;
-    }
     await showTemplateFormDialog(context, editing: definition);
   }
 
@@ -147,16 +192,29 @@ class _TemplateListTile extends ConsumerWidget {
     final definition = definitionAsync.value;
     var subtitle = definitionAsync.hasError ? '模板详情加载失败' : '加载中…';
     if (definition != null) {
-      if (_isShortcutTemplate(definition)) {
-        final note = definition.version.note;
+      final note = definition.version.note;
+      final noteSuffix = note != null && note.isNotEmpty ? '\n$note' : '';
+      if (definition.exercises.length == 1) {
+        final single = definition.exercises.single;
+        final metricLabel = switch (_metricForTracking(
+          single.trackingTypeSnapshot,
+        )) {
+          PlanMetric.duration => '时长',
+          PlanMetric.sets => '有效组数',
+          PlanMetric.distance => '距离',
+        };
         subtitle =
-            '${definition.exercises.single.exerciseNameSnapshot}（${definition.exercises.single.categorySnapshot.label}） · '
-            '${_shortcutMetric(definition) == PlanMetric.duration ? '时长' : '有效组数'} · '
+            '${single.exerciseNameSnapshot}（${single.categorySnapshot.label}） · '
+            '$metricLabel · '
             '${describeTemplateThresholds(definition)}'
-            '${note != null && note.isNotEmpty ? '\n$note' : ''}';
+            '$noteSuffix';
       } else {
+        final names = definition.exercises
+            .map((e) => e.exerciseNameSnapshot)
+            .join('、');
         subtitle =
-            '${definition.exercises.length} 个动作 · ${definition.sets.length} 个计划组';
+            '$names · ${definition.exercises.length} 个动作 · ${definition.sets.length} 个计划组'
+            '$noteSuffix';
       }
     }
     return ListTile(
@@ -185,6 +243,105 @@ Future<void> showTemplateFormDialog(
   );
 }
 
+class _TemplateExerciseDraft {
+  _TemplateExerciseDraft({
+    this.selectedExerciseId,
+    String exerciseName = '',
+    this.category = ExerciseCategory.cardio,
+    this.metric = PlanMetric.duration,
+    String minimumText = '',
+    String regularText = '',
+    String repsPerSetText = '1',
+  }) : exerciseController = TextEditingController(text: exerciseName),
+       minimumController = TextEditingController(text: minimumText),
+       regularController = TextEditingController(text: regularText),
+       repsPerSetController = TextEditingController(text: repsPerSetText);
+
+  factory _TemplateExerciseDraft.fromDefinition(
+    TemplateExercise exercise,
+    List<TemplateSet> sets,
+  ) {
+    final metric = _metricForTracking(exercise.trackingTypeSnapshot);
+    int? minimum;
+    late final int regular;
+    var repsPerSet = 1;
+    switch (metric) {
+      case PlanMetric.duration:
+        final hasMin = sets.any(
+          (s) =>
+              s.minimumDurationSeconds != null && s.minimumDurationSeconds! > 0,
+        );
+        final minSec = hasMin
+            ? sets.fold<int>(
+                0,
+                (sum, s) => sum + (s.minimumDurationSeconds ?? 0),
+              )
+            : null;
+        final regSec = sets.fold<int>(
+          0,
+          (sum, s) => sum + (s.durationSeconds ?? 0),
+        );
+        minimum = minSec == null
+            ? null
+            : (minSec / 60).round().clamp(1, 999999);
+        regular = regSec <= 0 ? 1 : (regSec / 60).round().clamp(1, 999999);
+      case PlanMetric.distance:
+        final hasMin = sets.any(
+          (s) =>
+              s.minimumDistanceMeters != null && s.minimumDistanceMeters! > 0,
+        );
+        minimum = hasMin
+            ? sets
+                  .fold<double>(
+                    0,
+                    (sum, s) => sum + (s.minimumDistanceMeters ?? 0),
+                  )
+                  .round()
+            : null;
+        regular = sets
+            .fold<double>(0, (sum, s) => sum + (s.distanceMeters ?? 0))
+            .round();
+      case PlanMetric.sets:
+        final minCount = sets
+            .where((set) => set.minimumReps != null && set.minimumReps! > 0)
+            .length;
+        minimum = minCount == 0 ? null : minCount;
+        regular = sets.length;
+        repsPerSet = sets.isEmpty ? 1 : (sets.first.reps ?? 1);
+    }
+    return _TemplateExerciseDraft(
+      selectedExerciseId: exercise.exerciseId,
+      exerciseName: exercise.exerciseNameSnapshot,
+      category: exercise.categorySnapshot,
+      metric: metric,
+      minimumText: minimum == null ? '' : '$minimum',
+      regularText: '$regular',
+      repsPerSetText: '$repsPerSet',
+    );
+  }
+
+  int? selectedExerciseId;
+  ExerciseCategory category;
+  PlanMetric metric;
+  final TextEditingController exerciseController;
+  final TextEditingController minimumController;
+  final TextEditingController regularController;
+  final TextEditingController repsPerSetController;
+
+  String get unitLabel => switch (metric) {
+    PlanMetric.duration => '分钟',
+    PlanMetric.sets => '组数',
+    PlanMetric.distance => '米',
+  };
+
+  void dispose() {
+    exerciseController.dispose();
+    minimumController.dispose();
+    regularController.dispose();
+    repsPerSetController.dispose();
+  }
+}
+
 class TemplateFormDialog extends ConsumerStatefulWidget {
   const TemplateFormDialog({super.key, this.editing});
 
@@ -197,13 +354,8 @@ class TemplateFormDialog extends ConsumerStatefulWidget {
 class _TemplateFormDialogState extends ConsumerState<TemplateFormDialog> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameController;
-  late final TextEditingController _exerciseController;
-  late final TextEditingController _minimumController;
-  late final TextEditingController _regularController;
   late final TextEditingController _noteController;
-  int? _selectedExerciseId;
-  late ExerciseCategory _category;
-  late PlanMetric _metric;
+  final List<_TemplateExerciseDraft> _exercises = [];
   bool _saving = false;
 
   bool get _isEditing => widget.editing != null;
@@ -212,260 +364,317 @@ class _TemplateFormDialogState extends ConsumerState<TemplateFormDialog> {
   void initState() {
     super.initState();
     final definition = widget.editing;
-    final exercise = definition?.exercises.single;
-    _selectedExerciseId = exercise?.exerciseId;
-    _metric = definition == null
-        ? PlanMetric.duration
-        : _shortcutMetric(definition);
     _nameController = TextEditingController(
       text: definition?.version.name ?? '',
     );
-    _exerciseController = TextEditingController(
-      text: exercise?.exerciseNameSnapshot ?? '',
-    );
-    _category = exercise?.categorySnapshot ?? ExerciseCategory.cardio;
-    final minimum = definition == null
-        ? null
-        : _metric == PlanMetric.duration
-        ? definition.sets.single.minimumDurationSeconds
-        : definition.sets.where((set) => set.minimumReps != null).length;
-    final regular = definition == null
-        ? null
-        : _metric == PlanMetric.duration
-        ? definition.sets.single.durationSeconds
-        : definition.sets.length;
-    String inputValue(int? value) {
-      if (value == null) return '';
-      return _metric == PlanMetric.duration ? '${value ~/ 60}' : '$value';
-    }
-
-    _minimumController = TextEditingController(text: inputValue(minimum));
-    _regularController = TextEditingController(text: inputValue(regular));
     _noteController = TextEditingController(
       text: definition?.version.note ?? '',
     );
+    if (definition == null || definition.exercises.isEmpty) {
+      _exercises.add(_TemplateExerciseDraft());
+    } else {
+      for (final exercise in definition.exercises) {
+        final exerciseSets = definition.sets
+            .where((s) => s.templateExerciseId == exercise.id)
+            .toList();
+        _exercises.add(
+          _TemplateExerciseDraft.fromDefinition(exercise, exerciseSets),
+        );
+      }
+    }
   }
 
   @override
   void dispose() {
     _nameController.dispose();
-    _exerciseController.dispose();
-    _minimumController.dispose();
-    _regularController.dispose();
     _noteController.dispose();
+    for (final draft in _exercises) {
+      draft.dispose();
+    }
     super.dispose();
   }
-
-  String get _unitLabel => _metric == PlanMetric.duration ? '分钟' : '组数';
 
   Future<void> _submit() async {
     if (_saving || !(_formKey.currentState?.validate() ?? false)) return;
     setState(() => _saving = true);
     final db = ref.read(databaseProvider);
-    final minimumText = _minimumController.text.trim();
-    final minimumInput = minimumText.isEmpty ? null : int.parse(minimumText);
-    final regularInput = int.parse(_regularController.text.trim());
-    final tracking = _metric == PlanMetric.duration
-        ? TrackingType.duration
-        : TrackingType.reps;
     final note = _noteController.text.trim();
     try {
-      final int catalogId;
       final editing = widget.editing;
-      if (_selectedExerciseId == null) {
-        catalogId = await db.insertExercise(
-          name: _exerciseController.text,
-          category: _category,
-          trackingType: tracking,
-        );
-      } else {
-        catalogId = _selectedExerciseId!;
-      }
-      final sets = _metric == PlanMetric.duration
-          ? [
+      await db.transaction(() async {
+        final exerciseInputs = <TemplateExerciseInput>[];
+        for (final draft in _exercises) {
+          final minimumText = draft.minimumController.text.trim();
+          final minimumInput = minimumText.isEmpty
+              ? null
+              : int.parse(minimumText);
+          final regularInput = int.parse(draft.regularController.text.trim());
+          final repsPerSetText = draft.repsPerSetController.text.trim();
+          final repsPerSet = repsPerSetText.isEmpty
+              ? 1
+              : int.parse(repsPerSetText);
+          final tracking = _trackingForMetric(draft.metric);
+          final int catalogId;
+          if (draft.selectedExerciseId == null) {
+            catalogId = await db.insertExercise(
+              name: draft.exerciseController.text,
+              category: draft.category,
+              trackingType: tracking,
+            );
+          } else {
+            catalogId = draft.selectedExerciseId!;
+          }
+          final sets = switch (draft.metric) {
+            PlanMetric.duration => [
               TemplateSetInput(
                 durationSeconds: regularInput * 60,
                 minimumDurationSeconds: minimumInput == null
                     ? null
                     : minimumInput * 60,
               ),
-            ]
-          : [
+            ],
+            PlanMetric.distance => [
+              TemplateSetInput(
+                distanceMeters: regularInput.toDouble(),
+                minimumDistanceMeters: minimumInput?.toDouble(),
+              ),
+            ],
+            PlanMetric.sets => [
               for (var i = 0; i < regularInput; i++)
                 TemplateSetInput(
-                  reps: 1,
+                  reps: repsPerSet,
                   minimumReps: minimumInput != null && i < minimumInput
-                      ? 1
+                      ? repsPerSet
                       : null,
                 ),
-            ];
-      final exercises = [
-        TemplateExerciseInput(exerciseId: catalogId, sets: sets),
-      ];
-      if (editing == null) {
-        await db.createWorkoutTemplate(
-          name: _nameController.text,
-          exercises: exercises,
-          note: note.isEmpty ? null : note,
-        );
-      } else {
-        await db.reviseWorkoutTemplate(
-          editing.template.id,
-          name: _nameController.text,
-          exercises: exercises,
-          note: note.isEmpty ? null : note,
-        );
-      }
+            ],
+          };
+          exerciseInputs.add(
+            TemplateExerciseInput(exerciseId: catalogId, sets: sets),
+          );
+        }
+        if (editing == null) {
+          await db.createWorkoutTemplate(
+            name: _nameController.text,
+            exercises: exerciseInputs,
+            note: note.isEmpty ? null : note,
+          );
+        } else {
+          await db.reviseWorkoutTemplate(
+            editing.template.id,
+            name: _nameController.text,
+            exercises: exerciseInputs,
+            note: note.isEmpty ? null : note,
+          );
+        }
+      });
       if (mounted) Navigator.of(context).pop();
     } finally {
       if (mounted) setState(() => _saving = false);
     }
   }
 
+  Widget _buildExerciseFields(
+    int index,
+    _TemplateExerciseDraft draft,
+    List<Exercise> catalog,
+  ) {
+    final selectedExists = catalog.any(
+      (exercise) => exercise.id == draft.selectedExerciseId,
+    );
+    final unitLabel = draft.unitLabel;
+    final fields = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_exercises.length > 1)
+          Row(
+            children: [
+              Text(
+                '动作 ${index + 1}',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const Spacer(),
+              IconButton(
+                tooltip: '移除动作',
+                icon: const Icon(Icons.delete_outline, size: 20),
+                onPressed: () => setState(() {
+                  _exercises.removeAt(index).dispose();
+                }),
+              ),
+            ],
+          ),
+        DropdownButtonFormField<int>(
+          key: ValueKey('exercise-$index-${draft.selectedExerciseId ?? -1}'),
+          initialValue: draft.selectedExerciseId ?? -1,
+          isExpanded: true,
+          decoration: const InputDecoration(labelText: '动作库'),
+          items: [
+            const DropdownMenuItem(value: -1, child: Text('新建自定义动作')),
+            if (draft.selectedExerciseId != null && !selectedExists)
+              DropdownMenuItem(
+                value: draft.selectedExerciseId,
+                child: Text(
+                  '${draft.exerciseController.text}（已归档）',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            for (final exercise in catalog)
+              DropdownMenuItem(
+                value: exercise.id,
+                child: Text(
+                  '${exercise.name} · ${exercise.trackingType.label}',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+          ],
+          onChanged: (value) {
+            final id = value == -1 ? null : value;
+            setState(() {
+              draft.selectedExerciseId = id;
+              if (id == null) {
+                draft.exerciseController.clear();
+                return;
+              }
+              final exercise = catalog.firstWhere((item) => item.id == id);
+              draft.exerciseController.text = exercise.name;
+              draft.category = exercise.category;
+              draft.metric = _metricForTracking(exercise.trackingType);
+            });
+          },
+        ),
+        TextFormField(
+          controller: draft.exerciseController,
+          enabled: draft.selectedExerciseId == null,
+          decoration: const InputDecoration(labelText: '动作名称'),
+          validator: (value) =>
+              value == null || value.trim().isEmpty ? '请输入动作名称' : null,
+        ),
+        DropdownButtonFormField<ExerciseCategory>(
+          key: ValueKey(
+            'template-category-$index-${draft.selectedExerciseId ?? -1}-${draft.category}',
+          ),
+          initialValue: draft.category,
+          decoration: const InputDecoration(labelText: '类别'),
+          items: [
+            for (final category in ExerciseCategory.values)
+              DropdownMenuItem(value: category, child: Text(category.label)),
+          ],
+          onChanged: draft.selectedExerciseId != null
+              ? null
+              : (value) => setState(
+                  () => draft.category = value ?? ExerciseCategory.cardio,
+                ),
+        ),
+        DropdownButtonFormField<PlanMetric>(
+          key: ValueKey(
+            'template-metric-$index-${draft.selectedExerciseId ?? -1}-${draft.metric}',
+          ),
+          initialValue: draft.metric,
+          decoration: const InputDecoration(labelText: '指标'),
+          items: const [
+            DropdownMenuItem(value: PlanMetric.duration, child: Text('持续时长')),
+            DropdownMenuItem(value: PlanMetric.sets, child: Text('有效组数')),
+            DropdownMenuItem(value: PlanMetric.distance, child: Text('距离')),
+          ],
+          onChanged: draft.selectedExerciseId != null
+              ? null
+              : (value) => setState(
+                  () => draft.metric = value ?? PlanMetric.duration,
+                ),
+        ),
+        TextFormField(
+          controller: draft.minimumController,
+          decoration: InputDecoration(labelText: '最低量（$unitLabel，可选）'),
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          validator: (value) {
+            final text = value?.trim() ?? '';
+            if (text.isEmpty) return null;
+            final parsed = int.tryParse(text);
+            if (parsed == null || parsed <= 0) return '最低量需大于 0，或留空';
+            return null;
+          },
+        ),
+        TextFormField(
+          controller: draft.regularController,
+          decoration: InputDecoration(labelText: '常规量（$unitLabel）'),
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          validator: (value) {
+            final regular = int.tryParse(value?.trim() ?? '');
+            if (regular == null || regular <= 0) return '常规量需大于 0';
+            final minimum = int.tryParse(draft.minimumController.text.trim());
+            if (minimum != null && regular < minimum) {
+              return '常规量不能低于最低量';
+            }
+            return null;
+          },
+        ),
+        if (draft.metric == PlanMetric.sets)
+          TextFormField(
+            controller: draft.repsPerSetController,
+            decoration: const InputDecoration(labelText: '每组目标次数（默认 1）'),
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            validator: (value) {
+              final text = value?.trim() ?? '';
+              if (text.isEmpty) return null;
+              final parsed = int.tryParse(text);
+              if (parsed == null || parsed <= 0) return '每组目标次数需大于 0';
+              return null;
+            },
+          ),
+      ],
+    );
+    if (_exercises.length == 1) return fields;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(padding: const EdgeInsets.all(12), child: fields),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final catalog = ref.watch(exercisesProvider).value ?? const <Exercise>[];
-    final selectedExists = catalog.any(
-      (exercise) => exercise.id == _selectedExerciseId,
-    );
     return AlertDialog(
       title: Text(_isEditing ? '编辑方案' : '新建方案'),
-      content: Form(
-        key: _formKey,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextFormField(
-                controller: _nameController,
-                decoration: const InputDecoration(labelText: '方案名称'),
-                validator: (value) =>
-                    value == null || value.trim().isEmpty ? '请输入方案名称' : null,
-              ),
-              DropdownButtonFormField<int>(
-                key: ValueKey('exercise-${_selectedExerciseId ?? -1}'),
-                initialValue: _selectedExerciseId ?? -1,
-                isExpanded: true,
-                decoration: const InputDecoration(labelText: '动作库'),
-                items: [
-                  const DropdownMenuItem(value: -1, child: Text('新建自定义动作')),
-                  if (_selectedExerciseId != null && !selectedExists)
-                    DropdownMenuItem(
-                      value: _selectedExerciseId,
-                      child: Text(
-                        '${_exerciseController.text}（已归档）',
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  for (final exercise in catalog.where(
-                    (exercise) =>
-                        exercise.trackingType != TrackingType.distance,
-                  ))
-                    DropdownMenuItem(
-                      value: exercise.id,
-                      child: Text(
-                        '${exercise.name} · ${exercise.trackingType.label}',
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                ],
-                onChanged: (value) {
-                  final id = value == -1 ? null : value;
-                  setState(() {
-                    _selectedExerciseId = id;
-                    if (id == null) {
-                      _exerciseController.clear();
-                      return;
-                    }
-                    final exercise = catalog.firstWhere(
-                      (item) => item.id == id,
-                    );
-                    _exerciseController.text = exercise.name;
-                    _category = exercise.category;
-                    _metric = exercise.trackingType == TrackingType.duration
-                        ? PlanMetric.duration
-                        : PlanMetric.sets;
-                  });
-                },
-              ),
-              TextFormField(
-                controller: _exerciseController,
-                enabled: _selectedExerciseId == null,
-                decoration: const InputDecoration(labelText: '动作名称'),
-                validator: (value) =>
-                    value == null || value.trim().isEmpty ? '请输入动作名称' : null,
-              ),
-              DropdownButtonFormField<ExerciseCategory>(
-                key: ValueKey(
-                  'template-category-${_selectedExerciseId ?? -1}-$_category',
+      content: SizedBox(
+        width: 480,
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextFormField(
+                  controller: _nameController,
+                  decoration: const InputDecoration(labelText: '方案名称'),
+                  validator: (value) =>
+                      value == null || value.trim().isEmpty ? '请输入方案名称' : null,
                 ),
-                initialValue: _category,
-                decoration: const InputDecoration(labelText: '类别'),
-                items: [
-                  for (final category in ExerciseCategory.values)
-                    DropdownMenuItem(
-                      value: category,
-                      child: Text(category.label),
-                    ),
+                const SizedBox(height: 8),
+                for (var i = 0; i < _exercises.length; i++) ...[
+                  _buildExerciseFields(i, _exercises[i], catalog),
+                  if (i != _exercises.length - 1) const SizedBox(height: 12),
                 ],
-                onChanged: _selectedExerciseId != null
-                    ? null
-                    : (value) => setState(
-                        () => _category = value ?? ExerciseCategory.cardio,
-                      ),
-              ),
-              DropdownButtonFormField<PlanMetric>(
-                key: ValueKey(
-                  'template-metric-${_selectedExerciseId ?? -1}-$_metric',
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  icon: const Icon(Icons.add),
+                  label: const Text('添加计划动作'),
+                  onPressed: () =>
+                      setState(() => _exercises.add(_TemplateExerciseDraft())),
                 ),
-                initialValue: _metric,
-                decoration: const InputDecoration(labelText: '指标'),
-                items: const [
-                  DropdownMenuItem(
-                    value: PlanMetric.duration,
-                    child: Text('持续时长'),
-                  ),
-                  DropdownMenuItem(value: PlanMetric.sets, child: Text('有效组数')),
-                ],
-                onChanged: _selectedExerciseId != null
-                    ? null
-                    : (value) => setState(
-                        () => _metric = value ?? PlanMetric.duration,
-                      ),
-              ),
-              TextFormField(
-                controller: _minimumController,
-                decoration: InputDecoration(labelText: '最低量（$_unitLabel，可选）'),
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                validator: (value) {
-                  final text = value?.trim() ?? '';
-                  if (text.isEmpty) return null;
-                  final parsed = int.tryParse(text);
-                  if (parsed == null || parsed <= 0) return '最低量需大于 0，或留空';
-                  return null;
-                },
-              ),
-              TextFormField(
-                controller: _regularController,
-                decoration: InputDecoration(labelText: '常规量（$_unitLabel）'),
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                validator: (value) {
-                  final regular = int.tryParse(value?.trim() ?? '');
-                  if (regular == null || regular <= 0) return '常规量需大于 0';
-                  final minimum = int.tryParse(_minimumController.text.trim());
-                  if (minimum != null && regular < minimum) {
-                    return '常规量不能低于最低量';
-                  }
-                  return null;
-                },
-              ),
-              TextFormField(
-                controller: _noteController,
-                decoration: const InputDecoration(labelText: '说明（可选）'),
-              ),
-            ],
+                TextFormField(
+                  controller: _noteController,
+                  decoration: const InputDecoration(labelText: '说明（可选）'),
+                ),
+              ],
+            ),
           ),
         ),
       ),

@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../database/database.dart';
+import '../domain/rules/rule_ast.dart';
 import '../domain/rules/rule_evaluator.dart';
 import '../providers/app_providers.dart';
 import '../screens/plans_screen.dart';
@@ -201,6 +204,8 @@ class RuleGoalsCard extends ConsumerWidget {
     final progressAsync = date == null
         ? ref.watch(ruleSetProgressProvider)
         : ref.watch(ruleSetProgressForDateProvider(date!));
+    final exercises = ref.watch(exercisesProvider).value ?? const <Exercise>[];
+    final exerciseNames = {for (final e in exercises) e.id: e.name};
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -237,7 +242,7 @@ class RuleGoalsCard extends ConsumerWidget {
                   : Column(
                       children: [
                         for (final item in items)
-                          _ruleProgressRow(context, item),
+                          _ruleProgressRow(context, item, exerciseNames),
                       ],
                     ),
             ),
@@ -247,7 +252,11 @@ class RuleGoalsCard extends ConsumerWidget {
     );
   }
 
-  Widget _ruleProgressRow(BuildContext context, RuleSetProgress item) {
+  Widget _ruleProgressRow(
+    BuildContext context,
+    RuleSetProgress item,
+    Map<int, String> exerciseNames,
+  ) {
     final scheme = Theme.of(context).colorScheme;
     final evaluation = item.evaluation;
     final (icon, label, color) = switch (evaluation.status) {
@@ -264,7 +273,41 @@ class RuleGoalsCard extends ConsumerWidget {
         scheme.error,
       ),
     };
-    final details = evaluation.children.map(_formatRuleValue).join(' · ');
+    RuleNode? expression;
+    try {
+      final raw = jsonDecode(item.ruleSet.expressionJson);
+      if (raw is Map) {
+        expression = RuleNode.fromJson(Map<String, Object?>.from(raw));
+      }
+    } catch (_) {
+      expression = null;
+    }
+    final List<(RuleNode?, RuleEvaluation)> leaves;
+    if (evaluation.children.isEmpty) {
+      leaves = [
+        if (evaluation.target != null ||
+            evaluation.status == RuleResultStatus.insufficientData)
+          (expression, evaluation),
+      ];
+    } else {
+      final astChildren = switch (expression) {
+        AllRule all => all.children,
+        AnyRule any => any.children,
+        _ => const <RuleNode>[],
+      };
+      leaves = [
+        for (var i = 0; i < evaluation.children.length; i++)
+          (
+            i < astChildren.length ? astChildren[i] : null,
+            evaluation.children[i],
+          ),
+      ];
+    }
+    final details = leaves
+        .map(
+          (pair) => _formatRuleCondition(pair.$1, pair.$2, exerciseNames),
+        )
+        .join(' · ');
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
@@ -288,6 +331,39 @@ class RuleGoalsCard extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  String _formatRuleCondition(
+    RuleNode? node,
+    RuleEvaluation evaluation,
+    Map<int, String> exerciseNames,
+  ) {
+    final valueText = _formatRuleValue(evaluation);
+    if (node is! ComparisonRule || node.filters.isEmpty) {
+      return valueText;
+    }
+    final filterParts = <String>[];
+    final exerciseId = node.filters.exerciseId;
+    final category = node.filters.category;
+    final setRole = node.filters.setRole;
+    if (exerciseId != null) {
+      filterParts.add(exerciseNames[exerciseId] ?? '动作#$exerciseId');
+    } else if (category != null) {
+      final catLabel = ExerciseCategory.values
+          .where((c) => c.name == category)
+          .map((c) => c.label)
+          .firstOrNull;
+      if (catLabel != null) filterParts.add(catLabel);
+    }
+    if (setRole != null) {
+      final roleLabel = SetRole.values
+          .where((r) => r.name == setRole)
+          .map((r) => r.label)
+          .firstOrNull;
+      if (roleLabel != null) filterParts.add(roleLabel);
+    }
+    if (filterParts.isEmpty) return valueText;
+    return '${filterParts.join('·')} $valueText';
   }
 
   String _formatRuleValue(RuleEvaluation evaluation) {

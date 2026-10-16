@@ -168,8 +168,8 @@ extension RuleDao on AppDatabase {
     if (policyVersion != 1) {
       throw ArgumentError('当前只支持评估策略版本 1');
     }
-    if ((combineMode == RuleCombineMode.all && expression is! AllRule) ||
-        (combineMode == RuleCombineMode.any && expression is! AnyRule)) {
+    if ((combineMode == RuleCombineMode.all && expression is AnyRule) ||
+        (combineMode == RuleCombineMode.any && expression is AllRule)) {
       throw ArgumentError('组合模式与表达式根节点不一致');
     }
     void validateNode(RuleNode node) {
@@ -237,11 +237,14 @@ extension RuleDao on AppDatabase {
     return buildMetricContext(periodStart: start, periodEndExclusive: end);
   }
 
-  Stream<List<RuleSetProgress>> watchRuleSetProgress(DateTime date) =>
-      _watchAny([
-        watchRuleSets(),
-        select(workouts).watch(),
-        select(workoutExercises).watch(),
-        select(workoutSets).watch(),
-      ]).asyncMap((_) => evaluateRuleSets(date));
+  Stream<List<RuleSetProgress>> watchRuleSetProgress(DateTime date) {
+    final start = AppDatabase.weekStart(date);
+    final end = start.add(const Duration(days: 7));
+    return _watchAny([
+      watchRuleSets(),
+      watchCompletedWorkoutsInWeek(date),
+      _watchExercisesInDateRange(start, end),
+      _watchSetsInDateRange(start, end),
+    ]).asyncMap((_) => evaluateRuleSets(date));
+  }
 }

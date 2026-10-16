@@ -30,7 +30,7 @@ class _WeekProgressScreenState extends ConsumerState<WeekProgressScreen> {
 
   /// 不允许翻到本周之后，和首页周条的规则一致
   bool get _canGoNext {
-    final today = AppDatabase.dateOnly(DateTime.now());
+    final today = AppDatabase.dateOnly(ref.read(appClockProvider)());
     return !_weekStart
         .add(const Duration(days: 7))
         .isAfter(AppDatabase.weekStart(today));
@@ -41,13 +41,12 @@ class _WeekProgressScreenState extends ConsumerState<WeekProgressScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final today = AppDatabase.dateOnly(ref.watch(appClockProvider)());
     final weekEnd = _weekStart.add(const Duration(days: 6));
     final label =
         '${intl.DateFormat('M月d日').format(_weekStart)} – '
         '${intl.DateFormat('M月d日').format(weekEnd)}';
-    final isThisWeek =
-        _weekStart ==
-        AppDatabase.weekStart(AppDatabase.dateOnly(DateTime.now()));
+    final isThisWeek = _weekStart == AppDatabase.weekStart(today);
 
     return Scaffold(
       appBar: AppBar(title: const Text('周进度')),
@@ -74,7 +73,7 @@ class _WeekProgressScreenState extends ConsumerState<WeekProgressScreen> {
                 TextButton(
                   onPressed: () => setState(() {
                     _weekStart = AppDatabase.weekStart(
-                      AppDatabase.dateOnly(DateTime.now()),
+                      AppDatabase.dateOnly(ref.read(appClockProvider)()),
                     );
                   }),
                   child: const Text('回到本周'),

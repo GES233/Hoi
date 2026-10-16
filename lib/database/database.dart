@@ -56,11 +56,35 @@ extension TrackingTypeLabel on TrackingType {
 /// 负重记录口径
 enum LoadConvention { none, external, assistance, bodyweight }
 
+extension LoadConventionLabel on LoadConvention {
+  String get label => switch (this) {
+    LoadConvention.none => '无负重',
+    LoadConvention.external => '外加负重',
+    LoadConvention.assistance => '助力',
+    LoadConvention.bodyweight => '自重',
+  };
+}
+
 /// 次数是总数还是每侧数量
 enum RepsConvention { total, perSide }
 
+extension RepsConventionLabel on RepsConvention {
+  String get label => switch (this) {
+    RepsConvention.total => '双侧/总数',
+    RepsConvention.perSide => '单侧',
+  };
+}
+
 /// 组角色与完成状态使用稳定文本持久化
 enum SetRole { warmup, work, cooldown }
+
+extension SetRoleLabel on SetRole {
+  String get label => switch (this) {
+    SetRole.warmup => '热身组',
+    SetRole.work => '工作组',
+    SetRole.cooldown => '放松组',
+  };
+}
 
 enum SetStatus { completed, skipped }
 
@@ -71,8 +95,8 @@ enum RuleCombineMode { all, any }
 /// 训练状态：进行中 / 已完成
 enum WorkoutStatus { inProgress, completed }
 
-/// 单动作模板快捷编辑器使用的输入模式
-enum PlanMetric { duration, sets }
+/// 模板编辑器使用的输入模式
+enum PlanMetric { duration, sets, distance }
 
 /// 单次训练按模板版本评估出的达标档位；none 表示未关联模板
 enum PlanTier { none, belowMin, min, regular }
@@ -478,11 +502,56 @@ class AppDatabase extends _$AppDatabase {
       }
     },
     beforeOpen: (_) async {
+      await _ensureIndexes();
       if (!seedBuiltIns) return;
       await _ensureBuiltInExercises();
       await _ensureDefaultRulePreset();
     },
   );
+
+  Future<void> _ensureIndexes() async {
+    final tables =
+        (await customSelect(
+              "SELECT name FROM sqlite_master WHERE type = 'table'",
+            ).get())
+            .map((row) => row.read<String>('name'))
+            .toSet();
+    const indexByTable = [
+      (
+        'workouts',
+        'CREATE INDEX IF NOT EXISTS idx_workouts_date_status ON workouts (date, status)',
+      ),
+      (
+        'workouts',
+        'CREATE INDEX IF NOT EXISTS idx_workouts_started_at ON workouts (started_at)',
+      ),
+      (
+        'workout_exercises',
+        'CREATE INDEX IF NOT EXISTS idx_workout_exercises_workout_id ON workout_exercises (workout_id, sort_order)',
+      ),
+      (
+        'workout_sets',
+        'CREATE INDEX IF NOT EXISTS idx_workout_sets_exercise_id ON workout_sets (exercise_id, sort_order)',
+      ),
+      (
+        'food_entries',
+        'CREATE INDEX IF NOT EXISTS idx_food_entries_date ON food_entries (date)',
+      ),
+      (
+        'template_exercises',
+        'CREATE INDEX IF NOT EXISTS idx_template_exercises_version_id ON template_exercises (template_version_id, sort_order)',
+      ),
+      (
+        'template_sets',
+        'CREATE INDEX IF NOT EXISTS idx_template_sets_exercise_id ON template_sets (template_exercise_id, sort_order)',
+      ),
+    ];
+    for (final (table, statement) in indexByTable) {
+      if (tables.contains(table)) {
+        await customStatement(statement);
+      }
+    }
+  }
 
   /// 只保留日期部分，保证按天查询的一致性
   static DateTime dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
@@ -621,12 +690,21 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
-  /// 有效组定义：已完成，且至少一种核心事实大于 0
-  static bool isValidSet(WorkoutSet s) =>
-      s.setStatus == SetStatus.completed &&
-      ((s.reps ?? 0) > 0 ||
-          (s.durationSeconds ?? 0) > 0 ||
-          (s.distanceMeters ?? 0) > 0);
+  /// 有效组定义：已完成，且核心事实大于 0。
+  /// 传入 [trackingType] 时优先校验对应口径字段（若该字段已填但 <= 0 则视为无效）。
+  static bool isValidSet(WorkoutSet s, {TrackingType? trackingType}) {
+    if (s.setStatus != SetStatus.completed) return false;
+    final primaryValue = switch (trackingType) {
+      TrackingType.reps => s.reps,
+      TrackingType.duration => s.durationSeconds,
+      TrackingType.distance => s.distanceMeters,
+      null => null,
+    };
+    if (primaryValue != null) return primaryValue > 0;
+    return (s.reps ?? 0) > 0 ||
+        (s.durationSeconds ?? 0) > 0 ||
+        (s.distanceMeters ?? 0) > 0;
+  }
 
   /// 当前已计时的秒数：now - startedAt - 已暂停秒数 - 正在暂停的这一段；
   /// startedAt 为空（异常或旧数据）时返回 0。权威数据在数据库，UI 只负责显示

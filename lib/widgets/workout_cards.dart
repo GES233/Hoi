@@ -149,6 +149,8 @@ class ExerciseCard extends ConsumerWidget {
     final draft = await showAddWorkoutSetDialog(
       ref.context,
       prefill: exerciseSets.isEmpty ? null : exerciseSets.last,
+      trackingType: exercise.trackingTypeSnapshot,
+      loadConvention: exercise.loadConventionSnapshot,
     );
     if (draft == null) return;
     await ref
@@ -161,6 +163,9 @@ class ExerciseCard extends ConsumerWidget {
           durationSeconds: draft.durationSeconds,
           distanceMeters: draft.distanceMeters,
           weightKg: draft.weightKg,
+          assistanceKg: draft.assistanceKg,
+          rpe: draft.rpe,
+          rir: draft.rir,
           note: draft.note,
         );
   }
@@ -176,13 +181,21 @@ class ExerciseCard extends ConsumerWidget {
           durationSeconds: last.durationSeconds,
           distanceMeters: last.distanceMeters,
           weightKg: last.weightKg,
+          assistanceKg: last.assistanceKg,
+          rpe: last.rpe,
+          rir: last.rir,
         );
   }
 
   /// 编辑已保存的组：次数 / 时长 / 重量 / 备注均可修改，
   /// 例如一组内先做完整版再做退阶，可事后在备注里补充
   Future<void> _editSet(WidgetRef ref, WorkoutSet set) async {
-    final draft = await showEditWorkoutSetDialog(ref.context, set);
+    final draft = await showEditWorkoutSetDialog(
+      ref.context,
+      set,
+      trackingType: exercise.trackingTypeSnapshot,
+      loadConvention: exercise.loadConventionSnapshot,
+    );
     if (draft == null) return;
     await ref
         .read(databaseProvider)
@@ -194,6 +207,9 @@ class ExerciseCard extends ConsumerWidget {
           durationSeconds: Value(draft.durationSeconds),
           distanceMeters: Value(draft.distanceMeters),
           weightKg: Value(draft.weightKg),
+          assistanceKg: Value(draft.assistanceKg),
+          rpe: Value(draft.rpe),
+          rir: Value(draft.rir),
           note: Value(draft.note),
         );
   }
@@ -221,6 +237,9 @@ class ExerciseCard extends ConsumerWidget {
             durationSeconds: set.durationSeconds,
             distanceMeters: set.distanceMeters,
             weightKg: set.weightKg,
+            assistanceKg: set.assistanceKg,
+            rpe: set.rpe,
+            rir: set.rir,
             note: set.note,
           ),
         ),

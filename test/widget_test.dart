@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/intl.dart';
 
 import 'package:hoi/database/database.dart';
+import 'package:hoi/domain/rules/metric.dart';
 import 'package:hoi/domain/rules/rule_ast.dart';
 import 'package:hoi/providers/app_providers.dart';
 import 'package:hoi/screens/home_screen.dart';
@@ -908,5 +909,367 @@ void main() {
     await pumpFrames();
 
     await finishTest(tester);
+  });
+
+  testWidgets('补记关联方案自动预填计划动作，草稿组可编辑，保存后方案达标', (tester) async {
+    final exerciseId = await db.insertExercise(
+      name: '俯卧撑',
+      category: ExerciseCategory.resistance,
+      trackingType: TrackingType.reps,
+    );
+    await db.createWorkoutTemplate(
+      name: '俯卧撑保底',
+      exercises: [
+        TemplateExerciseInput(
+          exerciseId: exerciseId,
+          sets: const [
+            TemplateSetInput(reps: 10, minimumReps: 5),
+          ],
+        ),
+      ],
+    );
+    await pumpHome(tester);
+
+    await tester.tap(find.text('补记运动'));
+    await tester.pumpAndSettle();
+
+    // 选择方案后自动预填计划动作「俯卧撑」
+    await tester.tap(find.text('无'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('俯卧撑保底').last);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('俯卧撑（抗阻）'), findsOneWidget);
+
+    // 添加一组 6 次（最低完成），再点按草稿组编辑为 10 次（常规完成）
+    await tester.tap(find.text('添加组'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, '次数（可选）'), '6');
+    await tester.tap(find.widgetWithText(FilledButton, '添加'));
+    await tester.pumpAndSettle();
+    expect(find.text('6 次'), findsOneWidget);
+
+    await tester.tap(find.text('6 次'));
+    await tester.pumpAndSettle();
+    expect(find.text('编辑组'), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextField, '次数（可选）'), '10');
+    await tester.tap(find.widgetWithText(FilledButton, '保存').last);
+    await tester.pumpAndSettle();
+    expect(find.text('10 次'), findsOneWidget);
+
+    // 保存补记训练
+    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('常规完成'), findsOneWidget);
+    await finishTest(tester);
+  });
+
+  testWidgets('编辑已完成训练：删空组拦截保存，直接返回不污染数据库', (tester) async {
+    final today = AppDatabase.dateOnly(DateTime.now());
+    final workoutId = await db.insertCompletedWorkout(
+      startedAt: today.add(const Duration(hours: 9)),
+      endedAt: today.add(const Duration(hours: 9, minutes: 30)),
+      totalSeconds: 1800,
+    );
+    final exId = await db.addWorkoutExercise(
+      workoutId,
+      name: '深蹲',
+      category: ExerciseCategory.resistance,
+      trackingType: TrackingType.reps,
+    );
+    await db.addWorkoutSet(exId, reps: 15);
+    await pumpHome(tester);
+
+    // 点击当日已完成训练进入编辑页
+    await tester.tap(find.text('深蹲'));
+    await tester.pumpAndSettle();
+    expect(find.text('编辑训练'), findsOneWidget);
+    expect(find.text('15 次'), findsOneWidget);
+
+    // 删除唯一的一组后点击保存 → 被拦截且提示至少需要一条有效组
+    await tester.tap(find.byTooltip('删除组'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    await tester.pumpAndSettle();
+    expect(find.text('至少需要一条有效组（次数或持续时间大于 0）才能保存'), findsOneWidget);
+    expect(find.text('编辑训练'), findsOneWidget);
+
+    // 直接返回（取消编辑）→ 数据库中原有的 15 次组完好无损
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    final sets = await db.getWorkoutSets(workoutId);
+    expect(sets, hasLength(1));
+    expect(sets.single.reps, 15);
+
+    await finishTest(tester);
+  });
+
+  testWidgets('3.1 方案编辑器支持距离口径、每组目标次数与多动作模板创建及编辑', (tester) async {
+    final runId = await db.insertExercise(
+      name: '跑步',
+      category: ExerciseCategory.cardio,
+      trackingType: TrackingType.distance,
+    );
+    final pushUpId = await db.insertExercise(
+      name: '俯卧撑',
+      category: ExerciseCategory.resistance,
+      trackingType: TrackingType.reps,
+    );
+    await pumpHome(tester);
+
+    await tester.tap(find.text('方案'));
+    await tester.pumpAndSettle();
+    expect(find.text('运动方案'), findsOneWidget);
+
+    await tester.tap(find.text('新建方案'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.widgetWithText(TextFormField, '方案名称'),
+      '跑推综合方案',
+    );
+    // 动作 1：从动作库选择「跑步 · 距离」（此前距离动作被过滤，现在可选）
+    await tester.tap(find.byKey(const ValueKey('exercise-0--1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('跑步 · 距离').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.widgetWithText(TextFormField, '最低量（米，可选）'),
+      '1000',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextFormField, '常规量（米）'),
+      '3000',
+    );
+
+    // 添加第 2 个计划动作：选择「俯卧撑 · 次数」，设置 2/3 组 × 每组 12 次
+    await tester.tap(find.text('添加计划动作'));
+    await tester.pumpAndSettle();
+    expect(find.text('动作 1'), findsOneWidget);
+    expect(find.text('动作 2'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('exercise-1--1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('俯卧撑 · 次数').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.widgetWithText(TextFormField, '最低量（组数，可选）'),
+      '2',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextFormField, '常规量（组数）'),
+      '3',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextFormField, '每组目标次数（默认 1）'),
+      '12',
+    );
+
+    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('跑推综合方案 · v1'), findsOneWidget);
+    expect(find.text('跑步、俯卧撑 · 2 个动作 · 4 个计划组'), findsOneWidget);
+
+    // 点击多动作方案可正常打开编辑器并保存为 v2（不再弹 SnackBar 拦截）
+    await tester.tap(find.text('跑推综合方案 · v1'));
+    await tester.pumpAndSettle();
+    expect(find.text('编辑方案'), findsOneWidget);
+    expect(find.text('1000'), findsOneWidget);
+    expect(find.text('3000'), findsOneWidget);
+    expect(find.text('12'), findsOneWidget);
+
+    await tester.enterText(
+      find.widgetWithText(TextFormField, '常规量（米）'),
+      '5000',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('跑推综合方案 · v2'), findsOneWidget);
+    final templates = await db.select(db.workoutTemplates).get();
+    final def = (await db.getTemplateDefinition(templates.single.id))!;
+    expect(def.exercises, hasLength(2));
+    expect(def.exercises[0].exerciseId, runId);
+    expect(def.exercises[1].exerciseId, pushUpId);
+    expect(def.sets.first.distanceMeters, 5000);
+    expect(def.sets.first.minimumDistanceMeters, 1000);
+    expect(def.sets.last.reps, 12);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await finishTest(tester);
+  });
+
+  testWidgets('3.2 动作目录支持负重与单双侧属性，组录入弹窗按口径置顶并支持助力/RPE/RIR', (
+    tester,
+  ) async {
+    await pumpHome(tester);
+
+    // 1. 在动作目录中新增带「外加负重 + 单侧」的按次数动作
+    await tester.tap(find.text('动作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('添加运动类型'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.widgetWithText(TextFormField, '运动名称'),
+      '单臂哑铃划船',
+    );
+    await tester.tap(find.widgetWithText(DropdownButtonFormField<ExerciseCategory>, '类别'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('抗阻').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(DropdownButtonFormField<TrackingType>, '记录方式'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('次数').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(DropdownButtonFormField<LoadConvention>, '负重方式'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('外加负重').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(DropdownButtonFormField<RepsConvention>, '计数口径'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('单侧').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(FilledButton, '添加'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('单臂哑铃划船'), findsOneWidget);
+    expect(find.text('抗阻 · 按次数记录 · 外加负重 · 单侧'), findsOneWidget);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    // 2. 在补记训练中测试距离动作的主记录项置顶，以及进阶指标（助力/RPE/RIR）录入
+    await db.insertExercise(
+      name: '弹力带引体向上',
+      category: ExerciseCategory.resistance,
+      trackingType: TrackingType.reps,
+      loadConvention: LoadConvention.assistance,
+    );
+    await tester.tap(find.text('补记运动'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('添加动作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('新建自定义动作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('弹力带引体向上 · 次数').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '添加'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('添加组'));
+    await tester.pumpAndSettle();
+    // 助力动作自动展开「助力 kg / RPE / RIR」，且「当前动作主记录项」提示在次数上
+    expect(find.text('当前动作主记录项'), findsOneWidget);
+    expect(find.widgetWithText(TextField, '助力 kg（可选）'), findsOneWidget);
+
+    await tester.enterText(find.widgetWithText(TextField, '次数（可选）'), '8');
+    await tester.enterText(find.widgetWithText(TextField, '助力 kg（可选）'), '15');
+    await tester.enterText(find.widgetWithText(TextField, 'RPE（1-10，可选）'), '8.5');
+    await tester.enterText(find.widgetWithText(TextField, 'RIR（保留次数，可选）'), '1');
+    await tester.tap(find.widgetWithText(FilledButton, '添加'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('8 次 · 助力 15 kg · RPE 8.5 · RIR 1'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    await tester.pumpAndSettle();
+
+    final savedSets = await db.select(db.workoutSets).get();
+    expect(savedSets, hasLength(1));
+    expect(savedSets.single.reps, 8);
+    expect(savedSets.single.assistanceKg, 15);
+    expect(savedSets.single.rpe, 8.5);
+    expect(savedSets.single.rir, 1);
+
+    await finishTest(tester);
+  });
+
+  testWidgets('3.3 周期目标进度兼容单条件根节点并展示动作/类别/组角色过滤前缀', (tester) async {
+    final today = AppDatabase.dateOnly(DateTime.now());
+    final weekStart = AppDatabase.weekStart(today);
+    final pushUpId = await db.insertExercise(
+      name: '俯卧撑',
+      category: ExerciseCategory.resistance,
+      trackingType: TrackingType.reps,
+    );
+
+    // 1. 根节点直接是 ComparisonRule 的单条件规则
+    await db.createRuleSet(
+      name: '单条件周跑量',
+      period: RulePeriod.week,
+      effectiveFromDate: weekStart,
+      combineMode: RuleCombineMode.all,
+      expression: const ComparisonRule(
+        metricId: 'distance',
+        operator: ComparisonOperator.greaterOrEqual,
+        target: 5000,
+      ),
+    );
+
+    // 2. 含类别过滤与动作+组角色过滤的多条件规则
+    await db.createRuleSet(
+      name: '分类与专项力量目标',
+      period: RulePeriod.week,
+      effectiveFromDate: weekStart,
+      combineMode: RuleCombineMode.all,
+      expression: AllRule([
+        const ComparisonRule(
+          metricId: 'valid_set_count',
+          filters: MetricFilters(category: 'resistance'),
+          operator: ComparisonOperator.greaterOrEqual,
+          target: 6,
+        ),
+        ComparisonRule(
+          metricId: 'reps',
+          filters: MetricFilters(exerciseId: pushUpId, setRole: 'work'),
+          operator: ComparisonOperator.greaterOrEqual,
+          target: 50,
+        ),
+      ]),
+    );
+
+    final workoutId = await db.insertCompletedWorkout(
+      startedAt: today.add(const Duration(hours: 18)),
+      endedAt: today.add(const Duration(hours: 18, minutes: 30)),
+      totalSeconds: 1800,
+    );
+    final exId = await db.addWorkoutExercise(
+      workoutId,
+      catalogExerciseId: pushUpId,
+      name: '俯卧撑',
+      category: ExerciseCategory.resistance,
+      trackingType: TrackingType.reps,
+    );
+    await db.addWorkoutSet(exId, setRole: SetRole.work, reps: 20);
+    await db.addWorkoutSet(exId, setRole: SetRole.warmup, reps: 10);
+
+    await pumpHome(tester);
+    await tester.tap(find.text('周进度'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+
+    // 单条件根节点也能显示具体数值进度
+    expect(find.text('单条件周跑量'), findsOneWidget);
+    expect(find.text('0/5000 米'), findsOneWidget);
+
+    // 带过滤条件的子规则显示清晰的过滤前缀（抗阻 2/6 组 · 俯卧撑·工作组 20/50 次）
+    expect(find.text('分类与专项力量目标'), findsOneWidget);
+    expect(find.text('抗阻 2/6 组 · 俯卧撑·工作组 20/50 次'), findsOneWidget);
+
+    await tester.pageBack();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    await tester.runAsync(db.close);
+    dbClosed = true;
   });
 }

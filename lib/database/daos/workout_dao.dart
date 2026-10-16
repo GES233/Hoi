@@ -92,24 +92,23 @@ extension WorkoutDao on AppDatabase {
     );
   }
 
-  /// 该训练是否至少有一条有效组
+  /// 该训练是否至少有一条有效组（按动作记录口径校验）
   Future<bool> hasValidSet(int workoutId) async {
-    final query =
-        select(workoutSets).join([
-            innerJoin(
-              workoutExercises,
-              workoutExercises.id.equalsExp(workoutSets.exerciseId),
-            ),
-          ])
-          ..where(workoutExercises.workoutId.equals(workoutId))
-          ..where(workoutSets.setStatus.equalsValue(SetStatus.completed))
-          ..where(
-            workoutSets.reps.isBiggerThanValue(0) |
-                workoutSets.durationSeconds.isBiggerThanValue(0) |
-                workoutSets.distanceMeters.isBiggerThanValue(0),
-          )
-          ..limit(1);
-    return (await query.get()).isNotEmpty;
+    final rows =
+        await (select(workoutSets).join([
+          innerJoin(
+            workoutExercises,
+            workoutExercises.id.equalsExp(workoutSets.exerciseId),
+          ),
+        ])..where(workoutExercises.workoutId.equals(workoutId))).get();
+    return rows.any((row) {
+      final set = row.readTable(workoutSets);
+      final exercise = row.readTable(workoutExercises);
+      return AppDatabase.isValidSet(
+        set,
+        trackingType: exercise.trackingTypeSnapshot,
+      );
+    });
   }
 
   /// 结束训练：至少一条有效组，否则抛 [StateError]。
@@ -255,6 +254,7 @@ extension WorkoutDao on AppDatabase {
   }
 
   /// 把持久化记录转换为规则引擎的稳定事实 DTO；规则计算不直接读取 Drift 表。
+  /// 使用批量查询一次性加载区间内全部动作与组，避免逐场训练 N+1 查询。
   Future<MetricContext> buildMetricContext({
     required DateTime periodStart,
     required DateTime periodEndExclusive,
@@ -271,26 +271,57 @@ extension WorkoutDao on AppDatabase {
               )
               ..orderBy([(workout) => OrderingTerm.asc(workout.date)]))
             .get();
-    final sessions = <MetricSessionFact>[];
-    for (final workout in completed) {
-      final actualExercises = await getWorkoutExercises(workout.id);
-      final actualSets = await getWorkoutSets(workout.id);
-      sessions.add(
+    if (completed.isEmpty) {
+      return MetricContext(
+        periodStart: start,
+        periodEndExclusive: end,
+        sessions: const [],
+      );
+    }
+    final workoutIds = [for (final w in completed) w.id];
+    final allExercises =
+        await (select(workoutExercises)
+              ..where((e) => e.workoutId.isIn(workoutIds))
+              ..orderBy([
+                (e) => OrderingTerm.asc(e.workoutId),
+                (e) => OrderingTerm.asc(e.sortOrder),
+              ]))
+            .get();
+    final exerciseIds = [for (final e in allExercises) e.id];
+    final allSets = exerciseIds.isEmpty
+        ? const <WorkoutSet>[]
+        : await (select(workoutSets)
+                ..where((s) => s.exerciseId.isIn(exerciseIds))
+                ..orderBy([
+                  (s) => OrderingTerm.asc(s.exerciseId),
+                  (s) => OrderingTerm.asc(s.sortOrder),
+                ]))
+              .get();
+    final exercisesByWorkout = <int, List<WorkoutExercise>>{};
+    for (final e in allExercises) {
+      (exercisesByWorkout[e.workoutId] ??= []).add(e);
+    }
+    final setsByExercise = <int, List<WorkoutSet>>{};
+    for (final s in allSets) {
+      (setsByExercise[s.exerciseId] ??= []).add(s);
+    }
+    final sessions = <MetricSessionFact>[
+      for (final workout in completed)
         MetricSessionFact(
           workoutId: workout.id,
           date: workout.date,
           completed: true,
           totalSeconds: workout.totalSeconds,
           exercises: [
-            for (final exercise in actualExercises)
+            for (final exercise
+                in exercisesByWorkout[workout.id] ?? const <WorkoutExercise>[])
               MetricExerciseFact(
                 exerciseId: exercise.catalogExerciseId,
                 category: exercise.category.name,
                 trackingType: exercise.trackingTypeSnapshot.name,
                 sets: [
-                  for (final set in actualSets.where(
-                    (set) => set.exerciseId == exercise.id,
-                  ))
+                  for (final set
+                      in setsByExercise[exercise.id] ?? const <WorkoutSet>[])
                     MetricSetFact(
                       setRole: set.setRole.name,
                       setStatus: set.setStatus.name,
@@ -302,8 +333,7 @@ extension WorkoutDao on AppDatabase {
               ),
           ],
         ),
-      );
-    }
+    ];
     return MetricContext(
       periodStart: start,
       periodEndExclusive: end,

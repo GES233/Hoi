@@ -8,6 +8,8 @@ typedef _ExerciseTypeDraft = ({
   String name,
   ExerciseCategory category,
   TrackingType trackingType,
+  LoadConvention loadConvention,
+  RepsConvention repsConvention,
 });
 
 /// 动作目录：新增、编辑和归档可在训练中复用的运动类型。
@@ -30,6 +32,8 @@ class ExercisesScreen extends ConsumerWidget {
         name: draft.name,
         category: draft.category,
         trackingType: draft.trackingType,
+        loadConvention: draft.loadConvention,
+        repsConvention: draft.repsConvention,
       );
     } else {
       await db.updateExercise(
@@ -37,8 +41,8 @@ class ExercisesScreen extends ConsumerWidget {
         name: draft.name,
         category: draft.category,
         trackingType: draft.trackingType,
-        loadConvention: editing.loadConvention,
-        repsConvention: editing.repsConvention,
+        loadConvention: draft.loadConvention,
+        repsConvention: draft.repsConvention,
       );
     }
   }
@@ -68,6 +72,19 @@ class ExercisesScreen extends ConsumerWidget {
     if (confirmed == true) {
       await ref.read(databaseProvider).archiveExercise(exercise.id);
     }
+  }
+
+  String _formatSubtitle(Exercise exercise) {
+    final parts = <String>[
+      exercise.category.label,
+      '按${exercise.trackingType.label}记录',
+      if (exercise.loadConvention != LoadConvention.none)
+        exercise.loadConvention.label,
+      if (exercise.trackingType == TrackingType.reps &&
+          exercise.repsConvention == RepsConvention.perSide)
+        exercise.repsConvention.label,
+    ];
+    return parts.join(' · ');
   }
 
   @override
@@ -104,9 +121,7 @@ class ExercisesScreen extends ConsumerWidget {
                   return ListTile(
                     leading: Icon(_categoryIcon(exercise.category)),
                     title: Text(exercise.name),
-                    subtitle: Text(
-                      '${exercise.category.label} · 按${exercise.trackingType.label}记录',
-                    ),
+                    subtitle: Text(_formatSubtitle(exercise)),
                     onTap: () => _openForm(context, ref, editing: exercise),
                     trailing: IconButton(
                       icon: const Icon(Icons.archive_outlined),
@@ -142,6 +157,8 @@ class _ExerciseTypeDialogState extends State<_ExerciseTypeDialog> {
   late final TextEditingController _nameController;
   late ExerciseCategory _category;
   late TrackingType _trackingType;
+  late LoadConvention _loadConvention;
+  late RepsConvention _repsConvention;
 
   @override
   void initState() {
@@ -150,6 +167,8 @@ class _ExerciseTypeDialogState extends State<_ExerciseTypeDialog> {
     _nameController = TextEditingController(text: editing?.name ?? '');
     _category = editing?.category ?? ExerciseCategory.cardio;
     _trackingType = editing?.trackingType ?? TrackingType.duration;
+    _loadConvention = editing?.loadConvention ?? LoadConvention.none;
+    _repsConvention = editing?.repsConvention ?? RepsConvention.total;
   }
 
   @override
@@ -164,6 +183,10 @@ class _ExerciseTypeDialogState extends State<_ExerciseTypeDialog> {
       name: _nameController.text.trim(),
       category: _category,
       trackingType: _trackingType,
+      loadConvention: _loadConvention,
+      repsConvention: _trackingType == TrackingType.reps
+          ? _repsConvention
+          : RepsConvention.total,
     ));
   }
 
@@ -172,44 +195,70 @@ class _ExerciseTypeDialogState extends State<_ExerciseTypeDialog> {
     final editing = widget.editing != null;
     return AlertDialog(
       title: Text(editing ? '编辑运动类型' : '添加运动类型'),
-      content: Form(
-        key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextFormField(
-              controller: _nameController,
-              autofocus: true,
-              decoration: const InputDecoration(labelText: '运动名称'),
-              textInputAction: TextInputAction.next,
-              validator: (value) =>
-                  value == null || value.trim().isEmpty ? '请输入运动名称' : null,
-            ),
-            DropdownButtonFormField<ExerciseCategory>(
-              initialValue: _category,
-              decoration: const InputDecoration(labelText: '类别'),
-              items: [
-                for (final category in ExerciseCategory.values)
-                  DropdownMenuItem(
-                    value: category,
-                    child: Text(category.label),
-                  ),
-              ],
-              onChanged: (value) =>
-                  setState(() => _category = value ?? ExerciseCategory.cardio),
-            ),
-            DropdownButtonFormField<TrackingType>(
-              initialValue: _trackingType,
-              decoration: const InputDecoration(labelText: '记录方式'),
-              items: [
-                for (final type in TrackingType.values)
-                  DropdownMenuItem(value: type, child: Text(type.label)),
-              ],
-              onChanged: (value) => setState(
-                () => _trackingType = value ?? TrackingType.duration,
+      content: SingleChildScrollView(
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: _nameController,
+                autofocus: true,
+                decoration: const InputDecoration(labelText: '运动名称'),
+                textInputAction: TextInputAction.next,
+                validator: (value) =>
+                    value == null || value.trim().isEmpty ? '请输入运动名称' : null,
               ),
-            ),
-          ],
+              DropdownButtonFormField<ExerciseCategory>(
+                initialValue: _category,
+                decoration: const InputDecoration(labelText: '类别'),
+                items: [
+                  for (final category in ExerciseCategory.values)
+                    DropdownMenuItem(
+                      value: category,
+                      child: Text(category.label),
+                    ),
+                ],
+                onChanged: (value) => setState(
+                  () => _category = value ?? ExerciseCategory.cardio,
+                ),
+              ),
+              DropdownButtonFormField<TrackingType>(
+                initialValue: _trackingType,
+                decoration: const InputDecoration(labelText: '记录方式'),
+                items: [
+                  for (final type in TrackingType.values)
+                    DropdownMenuItem(value: type, child: Text(type.label)),
+                ],
+                onChanged: (value) => setState(
+                  () => _trackingType = value ?? TrackingType.duration,
+                ),
+              ),
+              DropdownButtonFormField<LoadConvention>(
+                initialValue: _loadConvention,
+                decoration: const InputDecoration(labelText: '负重方式'),
+                items: [
+                  for (final load in LoadConvention.values)
+                    DropdownMenuItem(value: load, child: Text(load.label)),
+                ],
+                onChanged: (value) => setState(
+                  () => _loadConvention = value ?? LoadConvention.none,
+                ),
+              ),
+              if (_trackingType == TrackingType.reps)
+                DropdownButtonFormField<RepsConvention>(
+                  initialValue: _repsConvention,
+                  decoration: const InputDecoration(labelText: '计数口径'),
+                  items: [
+                    for (final reps in RepsConvention.values)
+                      DropdownMenuItem(value: reps, child: Text(reps.label)),
+                  ],
+                  onChanged: (value) => setState(
+                    () => _repsConvention = value ?? RepsConvention.total,
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
       actions: [

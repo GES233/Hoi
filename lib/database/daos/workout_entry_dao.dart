@@ -131,6 +131,9 @@ extension WorkoutEntryDao on AppDatabase {
     Value<int?>? durationSeconds,
     Value<double?>? distanceMeters,
     Value<double?>? weightKg,
+    Value<double?>? assistanceKg,
+    Value<double?>? rpe,
+    Value<double?>? rir,
     Value<String?>? note,
   }) {
     return (update(workoutSets)..where((t) => t.id.equals(id))).write(
@@ -141,6 +144,9 @@ extension WorkoutEntryDao on AppDatabase {
         durationSeconds: durationSeconds ?? const Value.absent(),
         distanceMeters: distanceMeters ?? const Value.absent(),
         weightKg: weightKg ?? const Value.absent(),
+        assistanceKg: assistanceKg ?? const Value.absent(),
+        rpe: rpe ?? const Value.absent(),
+        rir: rir ?? const Value.absent(),
         note: note ?? const Value.absent(),
       ),
     );

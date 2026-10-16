@@ -18,6 +18,9 @@ class MetricFilters {
   final String? category;
   final String? setRole;
 
+  bool get isEmpty =>
+      exerciseId == null && category == null && setRole == null;
+
   Map<String, Object> toJson() => {
     'exerciseId': ?exerciseId,
     'category': ?category,
@@ -203,7 +206,7 @@ bool _sessionMatchesFilters(MetricSessionFact session, MetricFilters filters) {
   return matchesExercise && matchesRole;
 }
 
-Iterable<MetricSetFact> _matchingCompletedSets(
+Iterable<(MetricExerciseFact, MetricSetFact)> _matchingCompletedExerciseSets(
   MetricContext context,
   MetricFilters filters,
 ) sync* {
@@ -212,7 +215,7 @@ Iterable<MetricSetFact> _matchingCompletedSets(
       for (final set in exercise.sets) {
         if (set.setStatus != 'completed') continue;
         if (filters.setRole != null && set.setRole != filters.setRole) continue;
-        yield set;
+        yield (exercise, set);
       }
     }
   }
@@ -220,17 +223,22 @@ Iterable<MetricSetFact> _matchingCompletedSets(
 
 bool _isValidSet(MetricExerciseFact exercise, MetricSetFact set) {
   if (set.setStatus != 'completed') return false;
-  return switch (exercise.trackingType) {
-    'reps' => (set.reps ?? 0) > 0,
-    'duration' => (set.durationSeconds ?? 0) > 0,
-    'distance' => (set.distanceMeters ?? 0) > 0,
-    _ => false,
+  final primary = switch (exercise.trackingType) {
+    'reps' => set.reps,
+    'duration' => set.durationSeconds,
+    'distance' => set.distanceMeters,
+    _ => null,
   };
+  if (primary != null) return primary > 0;
+  return (set.reps ?? 0) > 0 ||
+      (set.durationSeconds ?? 0) > 0 ||
+      (set.distanceMeters ?? 0) > 0;
 }
 
 MetricValue _sumMetric(
   MetricContext context,
   MetricFilters filters, {
+  required String trackingType,
   required String unit,
   required String missingField,
   required num? Function(MetricSetFact set) read,
@@ -238,10 +246,15 @@ MetricValue _sumMetric(
   var total = 0.0;
   var integral = true;
   final missing = <String>{};
-  for (final set in _matchingCompletedSets(context, filters)) {
+  for (final (exercise, set) in _matchingCompletedExerciseSets(
+    context,
+    filters,
+  )) {
     final value = read(set);
     if (value == null) {
-      missing.add(missingField);
+      if (exercise.trackingType == trackingType || filters.exerciseId != null) {
+        missing.add(missingField);
+      }
       continue;
     }
     if (value is double && value != value.roundToDouble()) integral = false;
@@ -351,6 +364,7 @@ final _builtInDefinitions = <MetricDefinition>[
     compute: (context, filters) => _sumMetric(
       context,
       filters,
+      trackingType: 'reps',
       unit: 'rep',
       missingField: 'reps',
       read: (set) => set.reps,
@@ -367,6 +381,7 @@ final _builtInDefinitions = <MetricDefinition>[
     compute: (context, filters) => _sumMetric(
       context,
       filters,
+      trackingType: 'duration',
       unit: 'second',
       missingField: 'duration_seconds',
       read: (set) => set.durationSeconds,
@@ -383,6 +398,7 @@ final _builtInDefinitions = <MetricDefinition>[
     compute: (context, filters) => _sumMetric(
       context,
       filters,
+      trackingType: 'distance',
       unit: 'meter',
       missingField: 'distance_meters',
       read: (set) => set.distanceMeters,

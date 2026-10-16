@@ -8,8 +8,10 @@ import '../providers/app_providers.dart';
 import '../widgets/workout_dialogs.dart';
 
 /// 补记 / 编辑已完成训练。
-/// 补记模式：动作与组先在本地暂存，保存时一次性写入；
-/// 编辑模式：动作与组实时写库，总用时与感受点保存时更新。
+/// 补记与编辑模式均在本地草稿（_drafts）中维护动作与组：
+/// - 取消返回时不会污染数据库中的已有记录；
+/// - 两种模式下组行均可点按编辑；
+/// - 点击保存时校验至少含一条有效组，并在单个数据库事务内原子写入与关联方案。
 class LogWorkoutScreen extends ConsumerStatefulWidget {
   const LogWorkoutScreen({super.key, required this.initialDate})
     : editing = null,
@@ -37,53 +39,85 @@ class LogWorkoutScreen extends ConsumerStatefulWidget {
   ConsumerState<LogWorkoutScreen> createState() => _LogWorkoutScreenState();
 }
 
-/// 补记模式本地暂存的组
+/// 本地暂存的组（编辑模式下保留原 id、templateSetId 及扩展字段）
 class _DraftSet {
   _DraftSet({
+    this.id,
+    this.templateSetId,
     this.reps,
     this.durationSeconds,
     this.distanceMeters,
     this.weightKg,
+    this.assistanceKg,
+    this.rpe,
+    this.rir,
     this.setRole = SetRole.work,
     this.setStatus = SetStatus.completed,
     this.note,
   });
 
+  int? id;
+  int? templateSetId;
   int? reps;
   int? durationSeconds;
   double? distanceMeters;
   double? weightKg;
+  double? assistanceKg;
+  double? rpe;
+  double? rir;
   SetRole setRole;
   SetStatus setStatus;
   String? note;
 
-  bool get isValid =>
-      setStatus == SetStatus.completed &&
-      ((reps ?? 0) > 0 ||
-          (durationSeconds ?? 0) > 0 ||
-          (distanceMeters ?? 0) > 0);
+  WorkoutSet toPreviewSet({int exerciseId = -1, int sortOrder = 0}) =>
+      WorkoutSet(
+        id: id ?? -1,
+        exerciseId: exerciseId,
+        templateSetId: templateSetId,
+        setRole: setRole,
+        setStatus: setStatus,
+        reps: reps,
+        durationSeconds: durationSeconds,
+        distanceMeters: distanceMeters,
+        weightKg: weightKg,
+        assistanceKg: assistanceKg,
+        rpe: rpe,
+        rir: rir,
+        note: note,
+        sortOrder: sortOrder,
+      );
+
+  bool isValid(TrackingType trackingType) => AppDatabase.isValidSet(
+    toPreviewSet(),
+    trackingType: trackingType,
+  );
 }
 
-/// 补记模式本地暂存的动作
+/// 本地暂存的动作（编辑模式下保留原 id 与 templateExerciseId；未落库的新自定义动作 catalogExerciseId 可为空，保存时一并入库）
 class _DraftExercise {
   _DraftExercise({
-    required this.catalogExerciseId,
+    this.id,
+    this.catalogExerciseId,
+    this.templateExerciseId,
     required this.name,
     required this.category,
     required this.trackingType,
     required this.loadConvention,
     required this.repsConvention,
     this.note,
-  });
+    List<_DraftSet>? sets,
+  }) : sets = sets ?? [];
 
-  int catalogExerciseId;
+  int? id;
+  int? catalogExerciseId;
+  int? templateExerciseId;
   String name;
   ExerciseCategory category;
   TrackingType trackingType;
   LoadConvention loadConvention;
   RepsConvention repsConvention;
   String? note;
-  final List<_DraftSet> sets = [];
+  final List<_DraftSet> sets;
 }
 
 class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
@@ -96,6 +130,7 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
 
   /// 关联的模板版本 id；null 表示不关联
   int? _selectedTemplateVersionId;
+  bool _loadingEditing = false;
   bool _saving = false;
 
   bool get _isEditing => widget.editing != null;
@@ -108,6 +143,8 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
     if (editing != null) {
       _startedAt = editing.startedAt;
       _endedAt = editing.endedAt;
+      _loadingEditing = true;
+      _loadEditingExercises(editing.id);
     } else {
       final now = ref.read(appClockProvider)();
       _startedAt = DateTime(
@@ -129,6 +166,49 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
           : minutes.toStringAsFixed(1);
     }
     _feelingController.text = editing?.feeling ?? '';
+  }
+
+  Future<void> _loadEditingExercises(int workoutId) async {
+    final db = ref.read(databaseProvider);
+    final exercises = await db.getWorkoutExercises(workoutId);
+    final sets = await db.getWorkoutSets(workoutId);
+    if (!mounted) return;
+    setState(() {
+      _drafts
+        ..clear()
+        ..addAll([
+          for (final e in exercises)
+            _DraftExercise(
+              id: e.id,
+              catalogExerciseId: e.catalogExerciseId,
+              templateExerciseId: e.templateExerciseId,
+              name: e.name,
+              category: e.category,
+              trackingType: e.trackingTypeSnapshot,
+              loadConvention: e.loadConventionSnapshot,
+              repsConvention: e.repsConventionSnapshot,
+              note: e.note,
+              sets: [
+                for (final s in sets.where((s) => s.exerciseId == e.id))
+                  _DraftSet(
+                    id: s.id,
+                    templateSetId: s.templateSetId,
+                    reps: s.reps,
+                    durationSeconds: s.durationSeconds,
+                    distanceMeters: s.distanceMeters,
+                    weightKg: s.weightKg,
+                    assistanceKg: s.assistanceKg,
+                    rpe: s.rpe,
+                    rir: s.rir,
+                    setRole: s.setRole,
+                    setStatus: s.setStatus,
+                    note: s.note,
+                  ),
+              ],
+            ),
+        ]);
+      _loadingEditing = false;
+    });
   }
 
   @override
@@ -157,11 +237,12 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
   }
 
   Future<void> _pickDate() async {
+    final now = ref.read(appClockProvider)();
     final picked = await showDatePicker(
       context: context,
       initialDate: _date,
       firstDate: DateTime(2020),
-      lastDate: DateTime.now().add(const Duration(days: 1)),
+      lastDate: AppDatabase.dateOnly(now).add(const Duration(days: 1)),
     );
     if (picked == null) return;
     final newDate = AppDatabase.dateOnly(picked);
@@ -222,6 +303,38 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
     setState(() => _endedAt = next);
   }
 
+  Future<void> _onTemplateChanged(int? versionId) async {
+    setState(() => _selectedTemplateVersionId = versionId);
+    // 补记模式下，若当前尚未添加任何动作且选择了方案，自动预填方案中的计划动作
+    if (!_isEditing && versionId != null && _drafts.isEmpty) {
+      final definition = await ref
+          .read(databaseProvider)
+          .getTemplateDefinitionByVersion(versionId);
+      if (!mounted ||
+          definition == null ||
+          _selectedTemplateVersionId != versionId ||
+          _drafts.isNotEmpty) {
+        return;
+      }
+      setState(() {
+        for (final planned in definition.exercises) {
+          _drafts.add(
+            _DraftExercise(
+              catalogExerciseId: planned.exerciseId,
+              templateExerciseId: planned.id,
+              name: planned.exerciseNameSnapshot,
+              category: planned.categorySnapshot,
+              trackingType: planned.trackingTypeSnapshot,
+              loadConvention: planned.loadConventionSnapshot,
+              repsConvention: planned.repsConventionSnapshot,
+              note: planned.note,
+            ),
+          );
+        }
+      });
+    }
+  }
+
   Future<void> _addExercise() async {
     final exercises = await ref.read(databaseProvider).getExercises();
     if (!mounted) return;
@@ -230,119 +343,79 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
       exercises: exercises,
     );
     if (draft == null) return;
-    final db = ref.read(databaseProvider);
-    final catalogId =
-        draft.catalogExerciseId ??
-        await db.insertExercise(
+    setState(
+      () => _drafts.add(
+        _DraftExercise(
+          catalogExerciseId: draft.catalogExerciseId,
           name: draft.name,
           category: draft.category,
           trackingType: draft.trackingType,
           loadConvention: draft.loadConvention,
           repsConvention: draft.repsConvention,
-        );
-    if (_isEditing) {
-      await db.addWorkoutExercise(
-        widget.editing!.id,
-        catalogExerciseId: catalogId,
-        name: draft.name,
-        category: draft.category,
-        trackingType: draft.trackingType,
-        loadConvention: draft.loadConvention,
-        repsConvention: draft.repsConvention,
-        note: draft.note,
-      );
-    } else {
-      setState(
-        () => _drafts.add(
-          _DraftExercise(
-            catalogExerciseId: catalogId,
-            name: draft.name,
-            category: draft.category,
-            trackingType: draft.trackingType,
-            loadConvention: draft.loadConvention,
-            repsConvention: draft.repsConvention,
-            note: draft.note,
-          ),
+          note: draft.note,
         ),
-      );
-    }
+      ),
+    );
   }
 
-  Future<void> _addSet(int index, WorkoutExercise? live) async {
-    final draft = await showAddWorkoutSetDialog(context);
+  Future<void> _addSet(int exerciseIndex) async {
+    final exercise = _drafts[exerciseIndex];
+    final prefill = exercise.sets.isEmpty
+        ? null
+        : exercise.sets.last.toPreviewSet();
+    final draft = await showAddWorkoutSetDialog(
+      context,
+      prefill: prefill,
+      trackingType: exercise.trackingType,
+      loadConvention: exercise.loadConvention,
+    );
     if (draft == null) return;
-    if (live != null) {
-      await ref
-          .read(databaseProvider)
-          .addWorkoutSet(
-            live.id,
-            setRole: draft.setRole,
-            setStatus: draft.setStatus,
-            reps: draft.reps,
-            durationSeconds: draft.durationSeconds,
-            distanceMeters: draft.distanceMeters,
-            weightKg: draft.weightKg,
-            note: draft.note,
-          );
-    } else {
-      setState(
-        () => _drafts[index].sets.add(
-          _DraftSet(
-            reps: draft.reps,
-            durationSeconds: draft.durationSeconds,
-            distanceMeters: draft.distanceMeters,
-            weightKg: draft.weightKg,
-            setRole: draft.setRole,
-            setStatus: draft.setStatus,
-            note: draft.note,
-          ),
+    setState(
+      () => _drafts[exerciseIndex].sets.add(
+        _DraftSet(
+          reps: draft.reps,
+          durationSeconds: draft.durationSeconds,
+          distanceMeters: draft.distanceMeters,
+          weightKg: draft.weightKg,
+          assistanceKg: draft.assistanceKg,
+          rpe: draft.rpe,
+          rir: draft.rir,
+          setRole: draft.setRole,
+          setStatus: draft.setStatus,
+          note: draft.note,
         ),
-      );
-    }
+      ),
+    );
   }
 
-  /// 编辑已保存的组（编辑模式，实时写库）
-  Future<void> _editSet(WorkoutSet set) async {
-    final draft = await showEditWorkoutSetDialog(context, set);
+  /// 点按编辑草稿中的组（补记模式与编辑模式共用）
+  Future<void> _editDraftSet(int exerciseIndex, int setIndex) async {
+    final exercise = _drafts[exerciseIndex];
+    final current = exercise.sets[setIndex];
+    final draft = await showEditWorkoutSetDialog(
+      context,
+      current.toPreviewSet(),
+      trackingType: exercise.trackingType,
+      loadConvention: exercise.loadConvention,
+    );
     if (draft == null) return;
-    await ref
-        .read(databaseProvider)
-        .updateWorkoutSet(
-          set.id,
-          setRole: Value(draft.setRole),
-          setStatus: Value(draft.setStatus),
-          reps: Value(draft.reps),
-          durationSeconds: Value(draft.durationSeconds),
-          distanceMeters: Value(draft.distanceMeters),
-          weightKg: Value(draft.weightKg),
-          note: Value(draft.note),
-        );
-  }
-
-  String _describeDraftSet(_DraftSet s) {
-    final parts = <String>[];
-    if ((s.reps ?? 0) > 0) parts.add('${s.reps} 次');
-    final d = s.durationSeconds;
-    if (d != null && d > 0) {
-      parts.add(
-        d >= 60
-            ? '${(d / 60).toStringAsFixed(d % 60 == 0 ? 0 : 1)} 分钟'
-            : '$d 秒',
-      );
-    }
-    if ((s.distanceMeters ?? 0) > 0) parts.add('${s.distanceMeters} 米');
-    if ((s.weightKg ?? 0) > 0) parts.add('${s.weightKg} kg');
-    if (s.setStatus == SetStatus.skipped) {
-      parts.insert(0, '已跳过');
-    } else if (parts.isEmpty) {
-      parts.add('（无效组）');
-    }
-    if (s.note != null && s.note!.isNotEmpty) parts.add(s.note!);
-    return parts.join(' · ');
+    setState(() {
+      current
+        ..setRole = draft.setRole
+        ..setStatus = draft.setStatus
+        ..reps = draft.reps
+        ..durationSeconds = draft.durationSeconds
+        ..distanceMeters = draft.distanceMeters
+        ..weightKg = draft.weightKg
+        ..assistanceKg = draft.assistanceKg
+        ..rpe = draft.rpe
+        ..rir = draft.rir
+        ..note = draft.note;
+    });
   }
 
   Future<void> _save() async {
-    if (_saving) return;
+    if (_saving || _loadingEditing) return;
     final startedAt = _startedAt;
     final endedAt = _endedAt;
     if (startedAt == null || endedAt == null) {
@@ -355,72 +428,169 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
           .showSnackBar(const SnackBar(content: Text('结束时间必须晚于开始时间')));
       return;
     }
+    final hasValid = _drafts.any(
+      (e) => e.sets.any((s) => s.isValid(e.trackingType)),
+    );
+    if (!hasValid) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('至少需要一条有效组（次数或持续时间大于 0）才能保存')),
+      );
+      return;
+    }
+
     setState(() => _saving = true);
     final db = ref.read(databaseProvider);
     final messenger = ScaffoldMessenger.of(context);
     final feeling = _feelingController.text.trim();
     TemplateVersion? linkedVersion;
-    int? savedId;
+    late final int savedId;
     try {
-      linkedVersion = _selectedTemplateVersionId == null
-          ? null
-          : await db.getTemplateVersion(_selectedTemplateVersionId!);
-      if (_isEditing) {
-        savedId = widget.editing!.id;
-        await db.updateWorkoutMeta(
-          savedId,
-          startedAt: startedAt,
-          endedAt: endedAt,
-          totalSeconds: Value(_effectiveTotalSeconds),
-          feeling: Value(feeling.isEmpty ? null : feeling),
-        );
-        if (linkedVersion != null) {
-          await db.linkTemplateToWorkout(savedId, linkedVersion);
-        } else if (widget.editing!.templateVersionId != null) {
-          await db.clearTemplateLink(savedId);
-        }
-      } else {
-        final hasValid = _drafts.any((e) => e.sets.any((s) => s.isValid));
-        if (!hasValid) {
-          messenger.showSnackBar(
-            const SnackBar(content: Text('至少需要一条有效组（次数或持续时间大于 0）才能保存')),
-          );
-          return;
-        }
-        savedId = await db.insertCompletedWorkout(
-          startedAt: startedAt,
-          endedAt: endedAt,
-          totalSeconds: _effectiveTotalSeconds,
-          feeling: feeling.isEmpty ? null : feeling,
-        );
+      await db.transaction(() async {
+        linkedVersion = _selectedTemplateVersionId == null
+            ? null
+            : await db.getTemplateVersion(_selectedTemplateVersionId!);
+
+        // 先确保新建的自定义动作写入动作目录
         for (final exercise in _drafts) {
-          final exerciseId = await db.addWorkoutExercise(
-            savedId,
-            catalogExerciseId: exercise.catalogExerciseId,
+          exercise.catalogExerciseId ??= await db.insertExercise(
             name: exercise.name,
             category: exercise.category,
             trackingType: exercise.trackingType,
             loadConvention: exercise.loadConvention,
             repsConvention: exercise.repsConvention,
-            note: exercise.note,
           );
-          for (final set in exercise.sets) {
-            await db.addWorkoutSet(
-              exerciseId,
-              setRole: set.setRole,
-              setStatus: set.setStatus,
-              reps: set.reps,
-              durationSeconds: set.durationSeconds,
-              distanceMeters: set.distanceMeters,
-              weightKg: set.weightKg,
-              note: set.note,
+        }
+
+        if (_isEditing) {
+          savedId = widget.editing!.id;
+          await db.updateWorkoutMeta(
+            savedId,
+            startedAt: startedAt,
+            endedAt: endedAt,
+            totalSeconds: Value(_effectiveTotalSeconds),
+            feeling: Value(feeling.isEmpty ? null : feeling),
+          );
+          final existingExercises = await db.getWorkoutExercises(savedId);
+          final keptExerciseIds = _drafts
+              .map((e) => e.id)
+              .whereType<int>()
+              .toSet();
+          for (final old in existingExercises) {
+            if (!keptExerciseIds.contains(old.id)) {
+              await db.deleteWorkoutExercise(old.id);
+            }
+          }
+          for (final exercise in _drafts) {
+            final int exerciseId;
+            if (exercise.id != null) {
+              exerciseId = exercise.id!;
+              final existingSets =
+                  await (db.select(db.workoutSets)
+                        ..where((s) => s.exerciseId.equals(exerciseId)))
+                      .get();
+              final keptSetIds = exercise.sets
+                  .map((s) => s.id)
+                  .whereType<int>()
+                  .toSet();
+              for (final oldSet in existingSets) {
+                if (!keptSetIds.contains(oldSet.id)) {
+                  await db.deleteWorkoutSet(oldSet.id);
+                }
+              }
+            } else {
+              exerciseId = await db.addWorkoutExercise(
+                savedId,
+                catalogExerciseId: exercise.catalogExerciseId,
+                templateExerciseId: exercise.templateExerciseId,
+                name: exercise.name,
+                category: exercise.category,
+                trackingType: exercise.trackingType,
+                loadConvention: exercise.loadConvention,
+                repsConvention: exercise.repsConvention,
+                note: exercise.note,
+              );
+              exercise.id = exerciseId;
+            }
+            for (final set in exercise.sets) {
+              if (set.id != null) {
+                await db.updateWorkoutSet(
+                  set.id!,
+                  setRole: Value(set.setRole),
+                  setStatus: Value(set.setStatus),
+                  reps: Value(set.reps),
+                  durationSeconds: Value(set.durationSeconds),
+                  distanceMeters: Value(set.distanceMeters),
+                  weightKg: Value(set.weightKg),
+                  assistanceKg: Value(set.assistanceKg),
+                  rpe: Value(set.rpe),
+                  rir: Value(set.rir),
+                  note: Value(set.note),
+                );
+              } else {
+                await db.addWorkoutSet(
+                  exerciseId,
+                  templateSetId: set.templateSetId,
+                  setRole: set.setRole,
+                  setStatus: set.setStatus,
+                  reps: set.reps,
+                  durationSeconds: set.durationSeconds,
+                  distanceMeters: set.distanceMeters,
+                  weightKg: set.weightKg,
+                  assistanceKg: set.assistanceKg,
+                  rpe: set.rpe,
+                  rir: set.rir,
+                  note: set.note,
+                );
+              }
+            }
+          }
+          if (linkedVersion != null) {
+            await db.linkTemplateToWorkout(savedId, linkedVersion!);
+          } else if (widget.editing!.templateVersionId != null) {
+            await db.clearTemplateLink(savedId);
+          }
+        } else {
+          savedId = await db.insertCompletedWorkout(
+            startedAt: startedAt,
+            endedAt: endedAt,
+            totalSeconds: _effectiveTotalSeconds,
+            feeling: feeling.isEmpty ? null : feeling,
+          );
+          for (final exercise in _drafts) {
+            final exerciseId = await db.addWorkoutExercise(
+              savedId,
+              catalogExerciseId: exercise.catalogExerciseId,
+              templateExerciseId: exercise.templateExerciseId,
+              name: exercise.name,
+              category: exercise.category,
+              trackingType: exercise.trackingType,
+              loadConvention: exercise.loadConvention,
+              repsConvention: exercise.repsConvention,
+              note: exercise.note,
             );
+            for (final set in exercise.sets) {
+              await db.addWorkoutSet(
+                exerciseId,
+                templateSetId: set.templateSetId,
+                setRole: set.setRole,
+                setStatus: set.setStatus,
+                reps: set.reps,
+                durationSeconds: set.durationSeconds,
+                distanceMeters: set.distanceMeters,
+                weightKg: set.weightKg,
+                assistanceKg: set.assistanceKg,
+                rpe: set.rpe,
+                rir: set.rir,
+                note: set.note,
+              );
+            }
+          }
+          if (linkedVersion != null) {
+            await db.linkTemplateToWorkout(savedId, linkedVersion!);
           }
         }
-        if (linkedVersion != null) {
-          await db.linkTemplateToWorkout(savedId, linkedVersion);
-        }
-      }
+      });
+
       // 关联了模板时按计划组关联给出完成反馈；自由添加的动作/组仍视为计划外事实。
       if (linkedVersion != null) {
         final w = await db.getWorkout(savedId);
@@ -449,26 +619,28 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
               : '补记运动',
         ),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _buildMetaCard(),
-          const SizedBox(height: 12),
-          if (_isEditing) ..._buildLiveExercises() else ..._buildDrafts(),
-          const SizedBox(height: 8),
-          if (!widget.singleExercise || _drafts.isEmpty)
-            OutlinedButton.icon(
-              icon: const Icon(Icons.add),
-              label: Text(widget.singleExercise ? '选择运动' : '添加动作'),
-              onPressed: _addExercise,
+      body: _loadingEditing
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                _buildMetaCard(),
+                const SizedBox(height: 12),
+                ..._buildDrafts(),
+                const SizedBox(height: 8),
+                if (!widget.singleExercise || _drafts.isEmpty)
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.add),
+                    label: Text(widget.singleExercise ? '选择运动' : '添加动作'),
+                    onPressed: _addExercise,
+                  ),
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: _saving ? null : _save,
+                  child: Text(widget.singleExercise ? '保存记录' : '保存'),
+                ),
+              ],
             ),
-          const SizedBox(height: 16),
-          FilledButton(
-            onPressed: _saving ? null : _save,
-            child: Text(widget.singleExercise ? '保存记录' : '保存'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -559,41 +731,11 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
             child: Text(summary.version.name),
           ),
       ],
-      onChanged: (value) => setState(() => _selectedTemplateVersionId = value),
+      onChanged: _onTemplateChanged,
     );
   }
 
-  /// 编辑模式：动作与组实时来自数据库
-  List<Widget> _buildLiveExercises() {
-    final id = widget.editing!.id;
-    final exercises = ref.watch(workoutExercisesProvider(id)).value ?? [];
-    final sets = ref.watch(workoutSetsProvider(id)).value ?? [];
-    final db = ref.read(databaseProvider);
-    return [
-      for (final exercise in exercises)
-        _exerciseCard(
-          title: '${exercise.name}（${exercise.category.label}）',
-          onDelete: () => db.deleteWorkoutExercise(exercise.id),
-          sets: [
-            for (final set in sets.where((s) => s.exerciseId == exercise.id))
-              ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                title: Text(describeSet(set)),
-                onTap: () => _editSet(set),
-                trailing: IconButton(
-                  icon: const Icon(Icons.close, size: 18),
-                  tooltip: '删除组',
-                  onPressed: () => db.deleteWorkoutSet(set.id),
-                ),
-              ),
-          ],
-          onAddSet: () => _addSet(0, exercise),
-        ),
-    ];
-  }
-
-  /// 补记模式：动作与组来自本地暂存
+  /// 动作与组草稿列表（补记与编辑模式共用，均支持点按编辑组）
   List<Widget> _buildDrafts() {
     return [
       for (var i = 0; i < _drafts.length; i++)
@@ -605,7 +747,8 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
               ListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
-                title: Text(_describeDraftSet(_drafts[i].sets[j])),
+                title: Text(describeSet(_drafts[i].sets[j].toPreviewSet())),
+                onTap: () => _editDraftSet(i, j),
                 trailing: IconButton(
                   icon: const Icon(Icons.close, size: 18),
                   tooltip: '删除组',
@@ -613,7 +756,7 @@ class _LogWorkoutScreenState extends ConsumerState<LogWorkoutScreen> {
                 ),
               ),
           ],
-          onAddSet: () => _addSet(i, null),
+          onAddSet: () => _addSet(i),
         ),
     ];
   }

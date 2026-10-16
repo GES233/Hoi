@@ -23,10 +23,10 @@ final minuteTickProvider = StreamProvider.autoDispose<DateTime>((ref) async* {
   yield* Stream<DateTime>.periodic(const Duration(minutes: 1), (_) => clock());
 });
 
-/// 当前选中的日期（只含日期部分），默认今天
+/// 当前选中的日期（只含日期部分），默认今天（通过 appClockProvider 获取）
 class SelectedDateNotifier extends Notifier<DateTime> {
   @override
-  DateTime build() => AppDatabase.dateOnly(DateTime.now());
+  DateTime build() => AppDatabase.dateOnly(ref.watch(appClockProvider)());
 
   /// 按天数前后移动选中日期
   void shift(int days) =>
@@ -36,7 +36,7 @@ class SelectedDateNotifier extends Notifier<DateTime> {
   void select(DateTime date) => state = AppDatabase.dateOnly(date);
 
   /// 回到今天
-  void goToday() => state = AppDatabase.dateOnly(DateTime.now());
+  void goToday() => state = AppDatabase.dateOnly(ref.read(appClockProvider)());
 }
 
 final selectedDateProvider = NotifierProvider<SelectedDateNotifier, DateTime>(

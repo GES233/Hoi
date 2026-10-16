@@ -21,7 +21,7 @@ class WeekStrip extends ConsumerWidget {
   final DateTime date;
 
   Future<void> _pickDate(BuildContext context, WidgetRef ref) async {
-    final today = AppDatabase.dateOnly(DateTime.now());
+    final today = AppDatabase.dateOnly(ref.read(appClockProvider)());
     final picked = await showDatePicker(
       context: context,
       initialDate: date.isAfter(today) ? today : date,
@@ -35,7 +35,7 @@ class WeekStrip extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final today = AppDatabase.dateOnly(DateTime.now());
+    final today = AppDatabase.dateOnly(ref.watch(appClockProvider)());
     final weekStart = AppDatabase.weekStart(date);
     final isToday = date == today;
     // 不允许切到本周之后
@@ -116,7 +116,7 @@ class WeekDayRow extends ConsumerWidget {
         ? ref.watch(weekDailyStatusProvider)
         : ref.watch(weekDailyStatusForDateProvider(date));
     final statuses = statusesAsync.value ?? {};
-    final today = AppDatabase.dateOnly(DateTime.now());
+    final today = AppDatabase.dateOnly(ref.watch(appClockProvider)());
     final weekStart = AppDatabase.weekStart(date);
 
     return Row(

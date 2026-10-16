@@ -119,11 +119,12 @@ class _WorkoutScreenState extends ConsumerState<WorkoutScreen> {
   /// 恢复训练不自动恢复组计时，由用户在动作卡上手动继续
   void _togglePause(Workout workout) {
     final db = ref.read(databaseProvider);
+    final now = ref.read(appClockProvider)();
     if (workout.pausedAt != null) {
-      db.resumeWorkout(workout.id);
+      db.resumeWorkout(workout.id, now: now);
     } else {
       _stopwatch?.pause();
-      db.pauseWorkout(workout.id);
+      db.pauseWorkout(workout.id, now: now);
     }
   }
 
@@ -158,7 +159,13 @@ class _WorkoutScreenState extends ConsumerState<WorkoutScreen> {
     final db = ref.read(databaseProvider);
     // 提前取 messenger，避免结束训练页面自动退出后跨异步间隙使用 context
     final messenger = ScaffoldMessenger.of(context);
-    final hasValid = sets.any(AppDatabase.isValidSet);
+    final exerciseById = {for (final e in exercises) e.id: e};
+    final hasValid = sets.any(
+      (s) => AppDatabase.isValidSet(
+        s,
+        trackingType: exerciseById[s.exerciseId]?.trackingTypeSnapshot,
+      ),
+    );
     // 恰好一个动作且还没有任何组时，允许把计时记为该动作时长（需用户勾选）
     final singleEmptyExercise = exercises.length == 1 && sets.isEmpty;
     if (!hasValid && !singleEmptyExercise) {
@@ -167,7 +174,10 @@ class _WorkoutScreenState extends ConsumerState<WorkoutScreen> {
       );
       return;
     }
-    final elapsed = AppDatabase.elapsedSeconds(workout);
+    final elapsed = AppDatabase.elapsedSeconds(
+      workout,
+      now: ref.read(appClockProvider)(),
+    );
     final result = await showDialog<({int? totalSeconds, String? feeling})>(
       context: context,
       builder: (_) => FinishWorkoutDialog(
@@ -181,6 +191,7 @@ class _WorkoutScreenState extends ConsumerState<WorkoutScreen> {
         workout.id,
         totalSeconds: result.totalSeconds,
         feeling: result.feeling,
+        now: ref.read(appClockProvider)(),
       );
       // 关联了方案时按保存后的实际记录给出达标反馈
       final done = await db.getWorkout(workout.id);
@@ -238,7 +249,10 @@ class _WorkoutScreenState extends ConsumerState<WorkoutScreen> {
     final exercises =
         ref.watch(workoutExercisesProvider(workout.id)).value ?? [];
     final sets = ref.watch(workoutSetsProvider(workout.id)).value ?? [];
-    final elapsed = AppDatabase.elapsedSeconds(workout);
+    final elapsed = AppDatabase.elapsedSeconds(
+      workout,
+      now: ref.watch(appClockProvider)(),
+    );
     final paused = workout.pausedAt != null;
 
     return ListView(

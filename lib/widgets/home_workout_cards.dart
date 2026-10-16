@@ -50,7 +50,10 @@ class WorkoutEntryButtons extends ConsumerWidget {
     }
     await ref
         .read(databaseProvider)
-        .startWorkout(templateVersion: templateVersion);
+        .startWorkout(
+          now: ref.read(appClockProvider)(),
+          templateVersion: templateVersion,
+        );
     if (context.mounted) {
       Navigator.of(context)
           .push(MaterialPageRoute(builder: (_) => const WorkoutScreen()));
@@ -59,7 +62,8 @@ class WorkoutEntryButtons extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isToday = selectedDate == AppDatabase.dateOnly(DateTime.now());
+    final isToday =
+        selectedDate == AppDatabase.dateOnly(ref.watch(appClockProvider)());
     final startButton = isToday
         ? FilledButton.icon(
             icon: const Icon(Icons.play_arrow),

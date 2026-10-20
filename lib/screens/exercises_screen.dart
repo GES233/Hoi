@@ -137,7 +137,7 @@ class ExercisesScreen extends ConsumerWidget {
                           borderRadius: BorderRadius.circular(11),
                         ),
                         child: Icon(
-                          _categoryIcon(exercise.category),
+                          HoiTheme.categoryIcon(exercise.category),
                           color: accent,
                           size: 20,
                         ),
@@ -161,13 +161,6 @@ class ExercisesScreen extends ConsumerWidget {
       ),
     );
   }
-
-  IconData _categoryIcon(ExerciseCategory category) => switch (category) {
-    ExerciseCategory.cardio => Icons.directions_run,
-    ExerciseCategory.resistance => Icons.fitness_center,
-    ExerciseCategory.core => Icons.accessibility_new,
-    ExerciseCategory.functional => Icons.sports_gymnastics,
-  };
 }
 
 class _ExerciseTypeDialog extends StatefulWidget {

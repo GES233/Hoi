@@ -13,8 +13,8 @@ import 'plans_screen.dart';
 import 'rules_screen.dart';
 
 /// 首页：行动入口优先，不使用悬浮按钮。
-/// 顺序：周条（选日期 + 本周落实点阵，非今天可回今天）→ 每日状态 → 今日方案 →
-/// 开始/补记/单项入口 → 进行中的训练（与选中日期无关）→ 当日运动记录 →
+/// 顺序：周条 + 每日状态合并卡片 → 进行中的训练（若存在，与选中日期无关）→
+/// 开始/补记/单项入口 → 今日方案 → 当日运动记录 →
 /// 饮食入口与摘要 → 紧凑周进度入口
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});

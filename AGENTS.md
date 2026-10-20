@@ -70,6 +70,8 @@ test/rule_evaluator_test.dart       # 规则 AST 与评估器纯 Dart 测试
 - **训练页常驻 Timer 与 pumpAndSettle**：`workout_screen.dart` 有每秒刷新显示的 `Timer.periodic`，widget 测试进入该页后不能再 `pumpAndSettle`（永不 settle），用固定时长 `pump()` 推进；收尾前 `pageBack` 弹出该页让 Timer 随 dispose 取消。
 - **Android 工具链**：SDK 在 `D:\Langs\AndroidSDK`（见 `android/local.properties` 的 `sdk.dir`），需 cmdline-tools 并已接受 licenses（`flutter doctor --android-licenses`）。
 - **`flutter` 命令在受限沙箱下卡死**：Flutter 工具启动时要在 SDK 自己的 cache 目录（`D:\Q\Scoop\apps\flutter\current\bin\cache\`，在工作区之外）获取 `lockfile` 独占锁；文件沙箱为 workspace-write 时写不进去，表现为 `flutter analyze` / `flutter --version` 长时间无输出（不是分析慢，也不是代码问题）。`dart.exe` 不需要该锁，可直接用 `dart.exe --packages=<flutter_tools>/\.dart_tool/package_config.json <sdk>/bin/cache/flutter_tools.snapshot <args>` 复现同样的 flutter 子命令，或单次提权运行 flutter 命令。
+- **`git push` 在受限沙箱下必然失败**：默认 schannel 后端报 `SEC_E_NO_CREDENTIALS`（受限令牌拿不到系统 TLS 凭证），改用 `git -c http.sslBackend=openssl push` 可连通；但认证阶段仍需 GCM 的交互提示脚本，MSYS 的 `sh.exe`/`bash.exe` 建不了命名管道（`couldn't create signal pipe, Win32 error 5`），最终报 `could not read Username`。解决办法是带上 `-c http.sslBackend=openssl` 并单次提权运行。GCM 已随 Scoop 版 git 安装在 `D:\Q\Scoop\apps\git\<ver>\mingw64\bin\git-credential-manager.exe`，只是不在 PATH 上，`Get-Command` 查不到不代表缺失。`fetch`/`ls-remote` 读公开库不受影响。
+- **`.git` 曾被双系统的另一套系统改写**：`.git/objects` 下少数扇出目录属主是外来 SID，`git commit` 会报 `insufficient permission for adding an object ... Error building trees`（`git add` 却正常）。这类目录即使用管理员 `takeown` + `icacls` 拿回属主并授予 FullControl 仍写不进，且改名后依旧被拒（拒绝跟着目录身份走，不是 ACL 层可解）。可行办法：读出其中对象 → 把目录改名腾出路径 → 新建同名目录 → 把对象写回（记得校验 SHA1），旧目录挪出 `objects` 或留作 `*.stale`（非合法扇出名，git 忽略）。操作后务必 `git fsck` 确认无缺失对象。
 
 ## 约定
 

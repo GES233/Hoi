@@ -34,6 +34,18 @@ class HoiTheme {
 
   static const Color seedColor = Color(0xFF1E6F50);
 
+  /// 简体中文字体回退链。Windows 上 Material 的默认正文族是 Segoe UI（零汉字），
+  /// Android 的 Noto Sans CJK 默认面偏日文，所以显式给出简中字体，
+  /// 避免汉字补字落到繁体/日文字体上而显示成繁体骨架。不存在的族名会被忽略。
+  static const cjkFontFallbacks = <String>[
+    'Microsoft YaHei UI',
+    'Microsoft YaHei',
+    'Noto Sans CJK SC',
+    'Noto Sans SC',
+    'Source Han Sans SC',
+    'PingFang SC',
+  ];
+
   static ThemeData light() {
     final scheme = ColorScheme.fromSeed(
       seedColor: seedColor,
@@ -154,6 +166,8 @@ class HoiTheme {
       useMaterial3: true,
       colorScheme: scheme,
       scaffoldBackgroundColor: scaffoldBackground,
+      // 只补回退，不替换主族：西文与数字仍走平台默认字体，汉字命中简中字体
+      fontFamilyFallback: cjkFontFallbacks,
       appBarTheme: AppBarTheme(
         backgroundColor: scaffoldBackground,
         surfaceTintColor: Colors.transparent,
@@ -164,6 +178,8 @@ class HoiTheme {
           fontSize: 20,
           fontWeight: FontWeight.w800,
           letterSpacing: -0.3,
+          // 这里绕过了 textTheme，需自行带上回退链，否则标题汉字仍走系统补字
+          fontFamilyFallback: cjkFontFallbacks,
         ),
       ),
       cardTheme: CardThemeData(

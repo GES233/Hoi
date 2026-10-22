@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import 'package:hoi/database/database.dart';
 import 'package:hoi/domain/rules/metric.dart';
 import 'package:hoi/domain/rules/rule_ast.dart';
+import 'package:hoi/main.dart';
 import 'package:hoi/providers/app_providers.dart';
 import 'package:hoi/screens/home_screen.dart';
 
@@ -147,6 +148,28 @@ void main() {
     expect(find.text('暂无记录'), findsNWidgets(2));
     // 选中今天时不显示「回到今天」
     expect(find.text('回到今天'), findsNothing);
+
+    await finishTest(tester);
+  });
+
+  testWidgets('应用以简体中文启动：locale 为 zh-CN 且使用中文 Material 本地化', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [databaseProvider.overrideWithValue(db)],
+        child: const HoiApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final context = tester.element(find.byType(Scaffold).first);
+    // 不声明 locale 时会回落到 en_US：汉字按 en 的 locale 走系统补字
+    // （可能显示成繁体/日式字形），且 scriptCategory 为 englishLike，中文行高偏松
+    expect(Localizations.localeOf(context), const Locale('zh', 'CN'));
+    expect(MaterialLocalizations.of(context).backButtonTooltip, '返回');
+    expect(find.text('开始运动'), findsOneWidget);
 
     await finishTest(tester);
   });

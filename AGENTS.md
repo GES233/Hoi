@@ -71,10 +71,12 @@ test/rule_evaluator_test.dart       # 规则 AST 与评估器纯 Dart 测试
 - **Android 工具链**：SDK 在 `D:\Langs\AndroidSDK`（见 `android/local.properties` 的 `sdk.dir`），需 cmdline-tools 并已接受 licenses（`flutter doctor --android-licenses`）。
 - **`flutter` 命令在受限沙箱下卡死**：Flutter 工具启动时要在 SDK 自己的 cache 目录（`D:\Q\Scoop\apps\flutter\current\bin\cache\`，在工作区之外）获取 `lockfile` 独占锁；文件沙箱为 workspace-write 时写不进去，表现为 `flutter analyze` / `flutter --version` 长时间无输出（不是分析慢，也不是代码问题）。`dart.exe` 不需要该锁，可直接用 `dart.exe --packages=<flutter_tools>/\.dart_tool/package_config.json <sdk>/bin/cache/flutter_tools.snapshot <args>` 复现同样的 flutter 子命令，或单次提权运行 flutter 命令。
 - **`git push` 在受限沙箱下必然失败**：默认 schannel 后端报 `SEC_E_NO_CREDENTIALS`（受限令牌拿不到系统 TLS 凭证），改用 `git -c http.sslBackend=openssl push` 可连通；但认证阶段仍需 GCM 的交互提示脚本，MSYS 的 `sh.exe`/`bash.exe` 建不了命名管道（`couldn't create signal pipe, Win32 error 5`），最终报 `could not read Username`。解决办法是带上 `-c http.sslBackend=openssl` 并单次提权运行。GCM 已随 Scoop 版 git 安装在 `D:\Q\Scoop\apps\git\<ver>\mingw64\bin\git-credential-manager.exe`，只是不在 PATH 上，`Get-Command` 查不到不代表缺失。`fetch`/`ls-remote` 读公开库不受影响。
+- **拖拽时 Windows 控制台刷 `Failed to update ui::AXTree`**：`ReorderableListView` 拖拽期间框架会把被拖项换成 `SizedBox`（`reorderable_list.dart` 的 `_ReorderableItemState.build`），该项的语义节点消失、松手后又在 Overlay 里以新 id 重建，Windows 引擎的 accessibility bridge 做增量 diff 时找不到旧节点，就每帧打一条 `error: N will not be in the tree and is not the new root`（id 会漂移）。给 `proxyDecorator` 加 `ExcludeSemantics` 只能减少一半抖动、消不掉；这是引擎侧问题（flutter/flutter#100610、#103808 同族）。功能与数据无影响，release 从资源管理器启动时无控制台输出——不要为此去改业务代码或换掉 `ReorderableListView`。同一屏里的 `Reported frame time is older than the last one; clamping` 也是引擎收到乱序帧时间戳的无害告警。
 - **`.git` 曾被双系统的另一套系统改写**：`.git/objects` 下少数扇出目录属主是外来 SID，`git commit` 会报 `insufficient permission for adding an object ... Error building trees`（`git add` 却正常）。这类目录即使用管理员 `takeown` + `icacls` 拿回属主并授予 FullControl 仍写不进，且改名后依旧被拒（拒绝跟着目录身份走，不是 ACL 层可解）。可行办法：读出其中对象 → 把目录改名腾出路径 → 新建同名目录 → 把对象写回（记得校验 SHA1），旧目录挪出 `objects` 或留作 `*.stale`（非合法扇出名，git 忽略）。操作后务必 `git fsck` 确认无缺失对象。
 
 ## 约定
 
 - 所有用户可见文本用中文；代码注释保持现有密度（简短说明意图）。
+- `MaterialApp` 必须显式声明 `locale: Locale('zh', 'CN')` + `supportedLocales` + `GlobalMaterialLocalizations.delegates`（依赖 `flutter_localizations`）。缺省会回落到 `en_US`，于是汉字以 `en` 的 locale 向系统索要字形、由系统补字任意决定（Windows 上易落到微软正黑/Yu Gothic，显示成繁体或日式骨架），中文行高也会退回 `englishLike`。主题层另以 `HoiTheme.cjkFontFallbacks` 给出简体中文字体回退链兜底。
 - Git 行尾：`.gitattributes` 锁定 LF（`.bat`/`.cmd` 为 CRLF）。
 - 新功能遵循现有模式：drift 查询方法放在 `AppDatabase`，状态放 `providers/`，UI 按 screen/widget 分层。

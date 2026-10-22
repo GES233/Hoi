@@ -944,5 +944,73 @@ void main() {
       expect(afterSets.every((s) => s.templateSetId == null), isTrue);
       expect((await db.evaluateWorkoutTemplate(workoutId)).tier, PlanTier.none);
     });
+
+    test('同日已完成训练按开始时间升序排列（相同开始时间按 id 兜底）', () async {
+      final eveningId = await db.insertCompletedWorkout(
+        startedAt: t0.add(const Duration(hours: 8)),
+        endedAt: t0.add(const Duration(hours: 9)),
+      );
+      final morningId = await db.insertCompletedWorkout(
+        startedAt: t0,
+        endedAt: t0.add(const Duration(hours: 1)),
+      );
+      final morningTieId = await db.insertCompletedWorkout(
+        startedAt: t0,
+        endedAt: t0.add(const Duration(minutes: 30)),
+      );
+
+      final list = await db.watchCompletedWorkouts(t0).first;
+      expect(list.map((w) => w.id).toList(), [
+        morningId,
+        morningTieId,
+        eveningId,
+      ]);
+    });
+
+    test('动作目录支持全局重排与按分类局部重排', () async {
+      final runId = await addCatalogExercise(
+        '跑步',
+        TrackingType.distance,
+        category: ExerciseCategory.cardio,
+      );
+      final squatId = await addCatalogExercise(
+        '深蹲',
+        TrackingType.reps,
+        category: ExerciseCategory.resistance,
+      );
+      final ropeId = await addCatalogExercise(
+        '跳绳',
+        TrackingType.duration,
+        category: ExerciseCategory.cardio,
+      );
+      final plankId = await addCatalogExercise(
+        '平板支撑',
+        TrackingType.duration,
+        category: ExerciseCategory.core,
+      );
+
+      expect(
+        (await db.getExercises()).map((e) => e.id).toList(),
+        [runId, squatId, ropeId, plankId],
+      );
+
+      // 仅对「心肺」分类下的 [runId, ropeId] 局部重排为 [ropeId, runId]，其它分类槽位保持不变
+      await db.reorderExercises([ropeId, runId]);
+      expect(
+        (await db.getExercises()).map((e) => e.id).toList(),
+        [ropeId, squatId, runId, plankId],
+      );
+
+      // 全局重排
+      await db.reorderExercises([plankId, squatId, ropeId, runId]);
+      final reordered = await db.getExercises();
+      expect(reordered.map((e) => e.id).toList(), [
+        plankId,
+        squatId,
+        ropeId,
+        runId,
+      ]);
+      expect(reordered.map((e) => e.sortOrder).toList(), [0, 1, 2, 3]);
+    });
   });
 }

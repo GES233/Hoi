@@ -41,7 +41,7 @@ lib/
 ├── screens/workout_screen.dart     # 进行中训练页（组装者）：顶部紧凑总用时行 + 暂停训练/继续训练/结束训练；组级小秒表计时只存内存、全场至多一组在计时；放弃训练/删除动作收进 ⋮ 菜单且有确认；进度卡与动作卡实现拆在 widgets/
 ├── screens/log_workout_screen.dart # 补记、记录单项运动（singleExercise）与编辑已完成训练（均在本地草稿 _drafts 暂存，组可点按编辑，保存时单事务原子写入；支持关联/取消方案并自动对齐计划组）
 ├── screens/week_progress_screen.dart # 周进度页（只读，支持独立翻周）：页面持有 _weekStart（上一周/下一周/回到本周），展示日期格 + 状态点图例 + 运动时段 + 周期目标；翻周与查看不改动全局选中日期
-├── screens/exercises_screen.dart   # 运动类型（动作目录）管理：新增、编辑（名称/类别/记录方式/负重方式/单双侧计数口径）与归档
+├── screens/exercises_screen.dart   # 运动类型（动作目录）管理：新增、编辑（名称/类别/记录方式/负重方式/单双侧计数口径）、分类筛选、拖拽排序与归档
 ├── screens/plans_screen.dart       # 训练模板（运动方案）管理：支持单动作与多动作编排（按持续时长、有效组数及每组次数、距离配置最低/常规量），编辑生成不可变新版本
 ├── screens/rules_screen.dart       # 周期目标列表、结构化规则编辑器与内置预设激活
 └── widgets/                        # 首页/训练卡片、周条与日期格（WeekDayRow/StatusDot/WeekStatusLegend）、运动时段时间线、周进度入口、饮食对话框、动作选择与组录入弹窗、小秒表等组件
@@ -55,7 +55,7 @@ test/rule_evaluator_test.dart       # 规则 AST 与评估器纯 Dart 测试
 
 ## 数据库
 
-表：`food_entries`、`favorite_foods`、`exercises`（动作目录，内置项有稳定 `builtinKey`）、`workout_templates`、`template_versions`、`template_exercises`、`template_sets`、`workouts`、`workout_exercises`、`workout_sets`、`rest_marks`、`daily_checkins`（每日睡眠感受、压力与备注）、`rule_sets`（结构化周期目标，预设来源使用 `presetKey`）。`date` 统一经 `AppDatabase.dateOnly()` 归一化，周一为一周起点。当前 `schemaVersion` 为 6：v3→v4 经确认重置发布前开发数据并建立模板/规则模型；v4→v5 增加内置来源键并移除旧 `weekly_exercise_goals`；v5→v6 增加每日状态表。
+表：`food_entries`、`favorite_foods`、`exercises`（动作目录，内置项有稳定 `builtinKey`，按 `sortOrder` 自定义排序）、`workout_templates`、`template_versions`、`template_exercises`、`template_sets`、`workouts`、`workout_exercises`、`workout_sets`、`rest_marks`、`daily_checkins`（每日睡眠感受、压力与备注）、`rule_sets`（结构化周期目标，预设来源使用 `presetKey`）。`date` 统一经 `AppDatabase.dateOnly()` 归一化，周一为一周起点。当前 `schemaVersion` 为 7：v3→v4 经确认重置发布前开发数据并建立模板/规则模型；v4→v5 增加内置来源键并移除旧 `weekly_exercise_goals`；v5→v6 增加每日状态表；v6→v7 为动作目录增加 `sortOrder` 列并初始化顺序。
 
 关键规则：全场至多一场 `inProgress` 训练；补记必须有开始与结束时间，`date` 取开始时间的本地日期；时间条纹表达现实起止跨度，`totalSeconds` 表达有效训练用时，两者不可混用；有效组按动作记录口径（次数/时长/距离）且状态为 `completed` 判断；`totalSeconds` 未知即 null，`session_duration` 返回数据不足而不从动作组推算；训练和模板通过动作 ID 关联，名称只存快照；模板版本不可变，历史训练按版本快照用 `evaluateWorkoutTemplate` 计算，`linkTemplateToWorkout` 按动作 ID（无目录 ID 时回退快照名称）顺序匹配计划动作并分配计划组槽位（`templateSetId`），`clearTemplateLink` 一并清空动作与组的模板槽位关联；整周每日状态 `watchWeekDailyStatus` 按周区间过滤监听并批量预加载计划组与实际组以避免 N+1 查询；周期目标使用 Rule AST，默认激活“每周 3 次且记录 90 分钟”预设，归档后不会自动复活；内置动作幂等写入并可归档。删除训练/动作显式级联，UI 删除前需确认。组级小秒表只存页面内存，全场至多一个组计时；滑动删除撤销会追加新行，不恢复原 sortOrder。
 

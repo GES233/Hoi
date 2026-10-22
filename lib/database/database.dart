@@ -270,6 +270,7 @@ class Exercises extends Table {
   TextColumn get trackingType => textEnum<TrackingType>()();
   TextColumn get loadConvention => textEnum<LoadConvention>()();
   TextColumn get repsConvention => textEnum<RepsConvention>()();
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
   DateTimeColumn get archivedAt => dateTime().nullable()();
   DateTimeColumn get createdAt => dateTime()();
 }
@@ -469,7 +470,7 @@ class AppDatabase extends _$AppDatabase {
   static QueryExecutor _openConnection() => driftDatabase(name: 'hoi_tracker');
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -500,6 +501,20 @@ class AppDatabase extends _$AppDatabase {
       if (from < 6) {
         await m.createTable(dailyCheckins);
       }
+      if (from < 7) {
+        await m.addColumn(exercises, exercises.sortOrder);
+        final rows = await customSelect(
+          'SELECT id FROM exercises ORDER BY name ASC, id ASC',
+        ).get();
+        for (var i = 0; i < rows.length; i++) {
+          final id = rows[i].read<int>('id');
+          await customUpdate(
+            'UPDATE exercises SET sort_order = ? WHERE id = ?',
+            variables: [Variable.withInt(i), Variable.withInt(id)],
+            updates: {exercises},
+          );
+        }
+      }
     },
     beforeOpen: (_) async {
       await _ensureIndexes();
@@ -517,6 +532,10 @@ class AppDatabase extends _$AppDatabase {
             .map((row) => row.read<String>('name'))
             .toSet();
     const indexByTable = [
+      (
+        'exercises',
+        'CREATE INDEX IF NOT EXISTS idx_exercises_sort_order ON exercises (sort_order, id)',
+      ),
       (
         'workouts',
         'CREATE INDEX IF NOT EXISTS idx_workouts_date_status ON workouts (date, status)',

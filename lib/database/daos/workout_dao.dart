@@ -212,7 +212,7 @@ extension WorkoutDao on AppDatabase {
     );
   }
 
-  /// 按归属日期监听已完成训练
+  /// 按归属日期监听已完成训练（按开始时间升序，相同时间按 id 升序）
   Stream<List<Workout>> watchCompletedWorkouts(DateTime date) =>
       (select(workouts)
             ..where(
@@ -220,7 +220,10 @@ extension WorkoutDao on AppDatabase {
                   t.status.equalsValue(WorkoutStatus.completed) &
                   t.date.equals(AppDatabase.dateOnly(date)),
             )
-            ..orderBy([(t) => OrderingTerm.asc(t.id)]))
+            ..orderBy([
+              (t) => OrderingTerm.asc(t.startedAt),
+              (t) => OrderingTerm.asc(t.id),
+            ]))
           .watch();
 
   /// 监听与半开时间区间相交的训练；用于七天时间线，包含进行中训练。
@@ -249,7 +252,11 @@ extension WorkoutDao on AppDatabase {
                 t.date.isBiggerOrEqualValue(start) &
                 t.date.isSmallerThanValue(end),
           )
-          ..orderBy([(t) => OrderingTerm.asc(t.date)]))
+          ..orderBy([
+            (t) => OrderingTerm.asc(t.date),
+            (t) => OrderingTerm.asc(t.startedAt),
+            (t) => OrderingTerm.asc(t.id),
+          ]))
         .watch();
   }
 
@@ -269,7 +276,11 @@ extension WorkoutDao on AppDatabase {
                     workout.date.isBiggerOrEqualValue(start) &
                     workout.date.isSmallerThanValue(end),
               )
-              ..orderBy([(workout) => OrderingTerm.asc(workout.date)]))
+              ..orderBy([
+                (workout) => OrderingTerm.asc(workout.date),
+                (workout) => OrderingTerm.asc(workout.startedAt),
+                (workout) => OrderingTerm.asc(workout.id),
+              ]))
             .get();
     if (completed.isEmpty) {
       return MetricContext(

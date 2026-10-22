@@ -13,18 +13,27 @@ typedef _ExerciseTypeDraft = ({
   RepsConvention repsConvention,
 });
 
-/// 动作目录：新增、编辑和归档可在训练中复用的运动类型。
-class ExercisesScreen extends ConsumerWidget {
+/// 动作目录：新增、编辑、分类筛选、拖拽排序和归档可在训练中复用的运动类型。
+class ExercisesScreen extends ConsumerStatefulWidget {
   const ExercisesScreen({super.key});
 
+  @override
+  ConsumerState<ExercisesScreen> createState() => _ExercisesScreenState();
+}
+
+class _ExercisesScreenState extends ConsumerState<ExercisesScreen> {
+  ExerciseCategory? _selectedCategory;
+
   Future<void> _openForm(
-    BuildContext context,
-    WidgetRef ref, {
+    BuildContext context, {
     Exercise? editing,
   }) async {
     final draft = await showDialog<_ExerciseTypeDraft>(
       context: context,
-      builder: (_) => _ExerciseTypeDialog(editing: editing),
+      builder: (_) => _ExerciseTypeDialog(
+        editing: editing,
+        initialCategory: _selectedCategory,
+      ),
     );
     if (draft == null) return;
     final db = ref.read(databaseProvider);
@@ -50,7 +59,6 @@ class ExercisesScreen extends ConsumerWidget {
 
   Future<void> _confirmArchive(
     BuildContext context,
-    WidgetRef ref,
     Exercise exercise,
   ) async {
     final confirmed = await showDialog<bool>(
@@ -75,6 +83,20 @@ class ExercisesScreen extends ConsumerWidget {
     }
   }
 
+  Future<void> _handleReorder(
+    List<Exercise> visibleExercises,
+    int oldIndex,
+    int newIndex,
+  ) async {
+    if (oldIndex == newIndex) return;
+    final reordered = [...visibleExercises];
+    final moved = reordered.removeAt(oldIndex);
+    reordered.insert(newIndex, moved);
+    await ref
+        .read(databaseProvider)
+        .reorderExercises([for (final e in reordered) e.id]);
+  }
+
   String _formatSubtitle(Exercise exercise) {
     final parts = <String>[
       exercise.category.label,
@@ -88,8 +110,34 @@ class ExercisesScreen extends ConsumerWidget {
     return parts.join(' · ');
   }
 
+  Widget _buildCategoryFilterBar(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: Row(
+        children: [
+          ChoiceChip(
+            label: const Text('全部'),
+            selected: _selectedCategory == null,
+            onSelected: (_) => setState(() => _selectedCategory = null),
+          ),
+          for (final category in ExerciseCategory.values) ...[
+            const SizedBox(width: 8),
+            ChoiceChip(
+              label: Text(category.label),
+              selected: _selectedCategory == category,
+              onSelected: (selected) => setState(
+                () => _selectedCategory = selected ? category : null,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final exercisesAsync = ref.watch(exercisesProvider);
     return Scaffold(
       appBar: AppBar(
@@ -98,75 +146,142 @@ class ExercisesScreen extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.add),
             tooltip: '添加运动类型',
-            onPressed: () => _openForm(context, ref),
+            onPressed: () => _openForm(context),
           ),
         ],
       ),
       body: exercisesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (_, _) => const Center(child: Text('运动类型加载失败')),
-        data: (exercises) => exercises.isEmpty
-            ? Center(
-                child: FilledButton.icon(
-                  icon: const Icon(Icons.add),
-                  label: const Text('添加运动类型'),
-                  onPressed: () => _openForm(context, ref),
-                ),
-              )
-            : ListView.separated(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
-                itemCount: exercises.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 8),
-                itemBuilder: (context, index) {
-                  final exercise = exercises[index];
-                  final scheme = Theme.of(context).colorScheme;
-                  final accent = HoiTheme.categoryColor(
-                    scheme,
-                    exercise.category,
-                  );
-                  return Card(
-                    child: ListTile(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      leading: Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          color: accent.withValues(alpha: 0.14),
-                          borderRadius: BorderRadius.circular(11),
-                        ),
-                        child: Icon(
-                          HoiTheme.categoryIcon(exercise.category),
-                          color: accent,
-                          size: 20,
-                        ),
-                      ),
-                      title: Text(
-                        exercise.name,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      subtitle: Text(_formatSubtitle(exercise)),
-                      onTap: () => _openForm(context, ref, editing: exercise),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.archive_outlined),
-                        tooltip: '归档运动类型',
-                        onPressed: () =>
-                            _confirmArchive(context, ref, exercise),
-                      ),
-                    ),
-                  );
-                },
+        data: (exercises) {
+          if (exercises.isEmpty) {
+            return Center(
+              child: FilledButton.icon(
+                icon: const Icon(Icons.add),
+                label: const Text('添加运动类型'),
+                onPressed: () => _openForm(context),
               ),
+            );
+          }
+          final filtered = _selectedCategory == null
+              ? exercises
+              : [
+                  for (final e in exercises)
+                    if (e.category == _selectedCategory) e,
+                ];
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildCategoryFilterBar(context),
+              Expanded(
+                child: filtered.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '该分类下暂无运动类型',
+                              style: TextStyle(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            FilledButton.icon(
+                              icon: const Icon(Icons.add),
+                              label: const Text('添加运动类型'),
+                              onPressed: () => _openForm(context),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ReorderableListView.builder(
+                        buildDefaultDragHandles: false,
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+                        itemCount: filtered.length,
+                        onReorderItem: (oldIndex, newIndex) =>
+                            _handleReorder(filtered, oldIndex, newIndex),
+                        itemBuilder: (context, index) {
+                          final exercise = filtered[index];
+                          final scheme = Theme.of(context).colorScheme;
+                          final accent = HoiTheme.categoryColor(
+                            scheme,
+                            exercise.category,
+                          );
+                          return Padding(
+                            key: ValueKey(exercise.id),
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Card(
+                              child: ListTile(
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                leading: Container(
+                                  width: 38,
+                                  height: 38,
+                                  decoration: BoxDecoration(
+                                    color: accent.withValues(alpha: 0.14),
+                                    borderRadius: BorderRadius.circular(11),
+                                  ),
+                                  child: Icon(
+                                    HoiTheme.categoryIcon(exercise.category),
+                                    color: accent,
+                                    size: 20,
+                                  ),
+                                ),
+                                title: Text(
+                                  exercise.name,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                subtitle: Text(_formatSubtitle(exercise)),
+                                onTap: () =>
+                                    _openForm(context, editing: exercise),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.archive_outlined),
+                                      tooltip: '归档运动类型',
+                                      onPressed: () =>
+                                          _confirmArchive(context, exercise),
+                                    ),
+                                    ReorderableDragStartListener(
+                                      index: index,
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 8,
+                                        ),
+                                        child: Icon(
+                                          Icons.drag_handle_rounded,
+                                          color: scheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
 }
 
 class _ExerciseTypeDialog extends StatefulWidget {
-  const _ExerciseTypeDialog({this.editing});
+  const _ExerciseTypeDialog({this.editing, this.initialCategory});
 
   final Exercise? editing;
+  final ExerciseCategory? initialCategory;
 
   @override
   State<_ExerciseTypeDialog> createState() => _ExerciseTypeDialogState();
@@ -185,7 +300,8 @@ class _ExerciseTypeDialogState extends State<_ExerciseTypeDialog> {
     super.initState();
     final editing = widget.editing;
     _nameController = TextEditingController(text: editing?.name ?? '');
-    _category = editing?.category ?? ExerciseCategory.cardio;
+    _category =
+        editing?.category ?? widget.initialCategory ?? ExerciseCategory.cardio;
     _trackingType = editing?.trackingType ?? TrackingType.duration;
     _loadConvention = editing?.loadConvention ?? LoadConvention.none;
     _repsConvention = editing?.repsConvention ?? RepsConvention.total;

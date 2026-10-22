@@ -676,6 +676,18 @@ class $ExercisesTable extends Exercises
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   ).withConverter<RepsConvention>($ExercisesTable.$converterrepsConvention);
+  static const VerificationMeta _sortOrderMeta = const VerificationMeta(
+    'sortOrder',
+  );
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+    'sort_order',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   static const VerificationMeta _archivedAtMeta = const VerificationMeta(
     'archivedAt',
   );
@@ -707,6 +719,7 @@ class $ExercisesTable extends Exercises
     trackingType,
     loadConvention,
     repsConvention,
+    sortOrder,
     archivedAt,
     createdAt,
   ];
@@ -738,6 +751,12 @@ class $ExercisesTable extends Exercises
       );
     } else if (isInserting) {
       context.missing(_nameMeta);
+    }
+    if (data.containsKey('sort_order')) {
+      context.handle(
+        _sortOrderMeta,
+        sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
+      );
     }
     if (data.containsKey('archived_at')) {
       context.handle(
@@ -798,6 +817,10 @@ class $ExercisesTable extends Exercises
           data['${effectivePrefix}reps_convention'],
         )!,
       ),
+      sortOrder: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sort_order'],
+      )!,
       archivedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}archived_at'],
@@ -840,6 +863,7 @@ class Exercise extends DataClass implements Insertable<Exercise> {
   final TrackingType trackingType;
   final LoadConvention loadConvention;
   final RepsConvention repsConvention;
+  final int sortOrder;
   final DateTime? archivedAt;
   final DateTime createdAt;
   const Exercise({
@@ -850,6 +874,7 @@ class Exercise extends DataClass implements Insertable<Exercise> {
     required this.trackingType,
     required this.loadConvention,
     required this.repsConvention,
+    required this.sortOrder,
     this.archivedAt,
     required this.createdAt,
   });
@@ -881,6 +906,7 @@ class Exercise extends DataClass implements Insertable<Exercise> {
         $ExercisesTable.$converterrepsConvention.toSql(repsConvention),
       );
     }
+    map['sort_order'] = Variable<int>(sortOrder);
     if (!nullToAbsent || archivedAt != null) {
       map['archived_at'] = Variable<DateTime>(archivedAt);
     }
@@ -899,6 +925,7 @@ class Exercise extends DataClass implements Insertable<Exercise> {
       trackingType: Value(trackingType),
       loadConvention: Value(loadConvention),
       repsConvention: Value(repsConvention),
+      sortOrder: Value(sortOrder),
       archivedAt: archivedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(archivedAt),
@@ -927,6 +954,7 @@ class Exercise extends DataClass implements Insertable<Exercise> {
       repsConvention: $ExercisesTable.$converterrepsConvention.fromJson(
         serializer.fromJson<String>(json['repsConvention']),
       ),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
       archivedAt: serializer.fromJson<DateTime?>(json['archivedAt']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
     );
@@ -950,6 +978,7 @@ class Exercise extends DataClass implements Insertable<Exercise> {
       'repsConvention': serializer.toJson<String>(
         $ExercisesTable.$converterrepsConvention.toJson(repsConvention),
       ),
+      'sortOrder': serializer.toJson<int>(sortOrder),
       'archivedAt': serializer.toJson<DateTime?>(archivedAt),
       'createdAt': serializer.toJson<DateTime>(createdAt),
     };
@@ -963,6 +992,7 @@ class Exercise extends DataClass implements Insertable<Exercise> {
     TrackingType? trackingType,
     LoadConvention? loadConvention,
     RepsConvention? repsConvention,
+    int? sortOrder,
     Value<DateTime?> archivedAt = const Value.absent(),
     DateTime? createdAt,
   }) => Exercise(
@@ -973,6 +1003,7 @@ class Exercise extends DataClass implements Insertable<Exercise> {
     trackingType: trackingType ?? this.trackingType,
     loadConvention: loadConvention ?? this.loadConvention,
     repsConvention: repsConvention ?? this.repsConvention,
+    sortOrder: sortOrder ?? this.sortOrder,
     archivedAt: archivedAt.present ? archivedAt.value : this.archivedAt,
     createdAt: createdAt ?? this.createdAt,
   );
@@ -993,6 +1024,7 @@ class Exercise extends DataClass implements Insertable<Exercise> {
       repsConvention: data.repsConvention.present
           ? data.repsConvention.value
           : this.repsConvention,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
       archivedAt: data.archivedAt.present
           ? data.archivedAt.value
           : this.archivedAt,
@@ -1010,6 +1042,7 @@ class Exercise extends DataClass implements Insertable<Exercise> {
           ..write('trackingType: $trackingType, ')
           ..write('loadConvention: $loadConvention, ')
           ..write('repsConvention: $repsConvention, ')
+          ..write('sortOrder: $sortOrder, ')
           ..write('archivedAt: $archivedAt, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
@@ -1025,6 +1058,7 @@ class Exercise extends DataClass implements Insertable<Exercise> {
     trackingType,
     loadConvention,
     repsConvention,
+    sortOrder,
     archivedAt,
     createdAt,
   );
@@ -1039,6 +1073,7 @@ class Exercise extends DataClass implements Insertable<Exercise> {
           other.trackingType == this.trackingType &&
           other.loadConvention == this.loadConvention &&
           other.repsConvention == this.repsConvention &&
+          other.sortOrder == this.sortOrder &&
           other.archivedAt == this.archivedAt &&
           other.createdAt == this.createdAt);
 }
@@ -1051,6 +1086,7 @@ class ExercisesCompanion extends UpdateCompanion<Exercise> {
   final Value<TrackingType> trackingType;
   final Value<LoadConvention> loadConvention;
   final Value<RepsConvention> repsConvention;
+  final Value<int> sortOrder;
   final Value<DateTime?> archivedAt;
   final Value<DateTime> createdAt;
   const ExercisesCompanion({
@@ -1061,6 +1097,7 @@ class ExercisesCompanion extends UpdateCompanion<Exercise> {
     this.trackingType = const Value.absent(),
     this.loadConvention = const Value.absent(),
     this.repsConvention = const Value.absent(),
+    this.sortOrder = const Value.absent(),
     this.archivedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
   });
@@ -1072,6 +1109,7 @@ class ExercisesCompanion extends UpdateCompanion<Exercise> {
     required TrackingType trackingType,
     required LoadConvention loadConvention,
     required RepsConvention repsConvention,
+    this.sortOrder = const Value.absent(),
     this.archivedAt = const Value.absent(),
     required DateTime createdAt,
   }) : name = Value(name),
@@ -1088,6 +1126,7 @@ class ExercisesCompanion extends UpdateCompanion<Exercise> {
     Expression<String>? trackingType,
     Expression<String>? loadConvention,
     Expression<String>? repsConvention,
+    Expression<int>? sortOrder,
     Expression<DateTime>? archivedAt,
     Expression<DateTime>? createdAt,
   }) {
@@ -1099,6 +1138,7 @@ class ExercisesCompanion extends UpdateCompanion<Exercise> {
       if (trackingType != null) 'tracking_type': trackingType,
       if (loadConvention != null) 'load_convention': loadConvention,
       if (repsConvention != null) 'reps_convention': repsConvention,
+      if (sortOrder != null) 'sort_order': sortOrder,
       if (archivedAt != null) 'archived_at': archivedAt,
       if (createdAt != null) 'created_at': createdAt,
     });
@@ -1112,6 +1152,7 @@ class ExercisesCompanion extends UpdateCompanion<Exercise> {
     Value<TrackingType>? trackingType,
     Value<LoadConvention>? loadConvention,
     Value<RepsConvention>? repsConvention,
+    Value<int>? sortOrder,
     Value<DateTime?>? archivedAt,
     Value<DateTime>? createdAt,
   }) {
@@ -1123,6 +1164,7 @@ class ExercisesCompanion extends UpdateCompanion<Exercise> {
       trackingType: trackingType ?? this.trackingType,
       loadConvention: loadConvention ?? this.loadConvention,
       repsConvention: repsConvention ?? this.repsConvention,
+      sortOrder: sortOrder ?? this.sortOrder,
       archivedAt: archivedAt ?? this.archivedAt,
       createdAt: createdAt ?? this.createdAt,
     );
@@ -1160,6 +1202,9 @@ class ExercisesCompanion extends UpdateCompanion<Exercise> {
         $ExercisesTable.$converterrepsConvention.toSql(repsConvention.value),
       );
     }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
     if (archivedAt.present) {
       map['archived_at'] = Variable<DateTime>(archivedAt.value);
     }
@@ -1179,6 +1224,7 @@ class ExercisesCompanion extends UpdateCompanion<Exercise> {
           ..write('trackingType: $trackingType, ')
           ..write('loadConvention: $loadConvention, ')
           ..write('repsConvention: $repsConvention, ')
+          ..write('sortOrder: $sortOrder, ')
           ..write('archivedAt: $archivedAt, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
@@ -7658,6 +7704,7 @@ typedef $$ExercisesTableCreateCompanionBuilder = ExercisesCompanion Function({
   required TrackingType trackingType,
   required LoadConvention loadConvention,
   required RepsConvention repsConvention,
+  Value<int> sortOrder,
   Value<DateTime?> archivedAt,
   required DateTime createdAt,
 });
@@ -7669,6 +7716,7 @@ typedef $$ExercisesTableUpdateCompanionBuilder = ExercisesCompanion Function({
   Value<TrackingType> trackingType,
   Value<LoadConvention> loadConvention,
   Value<RepsConvention> repsConvention,
+  Value<int> sortOrder,
   Value<DateTime?> archivedAt,
   Value<DateTime> createdAt,
 });
@@ -7765,6 +7813,11 @@ class $$ExercisesTableFilterComposer
   get repsConvention => $composableBuilder(
     column: $table.repsConvention,
     builder: (column) => ColumnWithTypeConverterFilters(column),
+  );
+
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnFilters(column),
   );
 
   ColumnFilters<DateTime> get archivedAt => $composableBuilder(
@@ -7872,6 +7925,11 @@ class $$ExercisesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get archivedAt => $composableBuilder(
     column: $table.archivedAt,
     builder: (column) => ColumnOrderings(column),
@@ -7923,6 +7981,9 @@ class $$ExercisesTableAnnotationComposer
         column: $table.repsConvention,
         builder: (column) => column,
       );
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
 
   GeneratedColumn<DateTime> get archivedAt => $composableBuilder(
     column: $table.archivedAt,
@@ -8022,6 +8083,7 @@ class $$ExercisesTableTableManager
                 Value<TrackingType> trackingType = const Value.absent(),
                 Value<LoadConvention> loadConvention = const Value.absent(),
                 Value<RepsConvention> repsConvention = const Value.absent(),
+                Value<int> sortOrder = const Value.absent(),
                 Value<DateTime?> archivedAt = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
               }) => ExercisesCompanion(
@@ -8032,6 +8094,7 @@ class $$ExercisesTableTableManager
                 trackingType: trackingType,
                 loadConvention: loadConvention,
                 repsConvention: repsConvention,
+                sortOrder: sortOrder,
                 archivedAt: archivedAt,
                 createdAt: createdAt,
               ),
@@ -8044,6 +8107,7 @@ class $$ExercisesTableTableManager
                 required TrackingType trackingType,
                 required LoadConvention loadConvention,
                 required RepsConvention repsConvention,
+                Value<int> sortOrder = const Value.absent(),
                 Value<DateTime?> archivedAt = const Value.absent(),
                 required DateTime createdAt,
               }) => ExercisesCompanion.insert(
@@ -8054,6 +8118,7 @@ class $$ExercisesTableTableManager
                 trackingType: trackingType,
                 loadConvention: loadConvention,
                 repsConvention: repsConvention,
+                sortOrder: sortOrder,
                 archivedAt: archivedAt,
                 createdAt: createdAt,
               ),

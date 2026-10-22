@@ -1272,4 +1272,69 @@ void main() {
     await tester.runAsync(db.close);
     dbClosed = true;
   });
+
+  testWidgets('运动类型支持分类筛选与拖拽排序', (tester) async {
+    final runId = await db.insertExercise(
+      name: '跑步',
+      category: ExerciseCategory.cardio,
+      trackingType: TrackingType.distance,
+    );
+    final squatId = await db.insertExercise(
+      name: '深蹲',
+      category: ExerciseCategory.resistance,
+      trackingType: TrackingType.reps,
+    );
+    final ropeId = await db.insertExercise(
+      name: '跳绳',
+      category: ExerciseCategory.cardio,
+      trackingType: TrackingType.duration,
+    );
+
+    await pumpHome(tester);
+    await tester.tap(find.text('动作'));
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(ChoiceChip, '全部'), findsOneWidget);
+    expect(find.widgetWithText(ChoiceChip, '心肺'), findsOneWidget);
+    expect(find.widgetWithText(ChoiceChip, '抗阻'), findsOneWidget);
+    expect(find.text('跑步'), findsOneWidget);
+    expect(find.text('深蹲'), findsOneWidget);
+    expect(find.text('跳绳'), findsOneWidget);
+
+    // 切到「心肺」分类：仅显示心肺动作，不显示抗阻动作
+    await tester.tap(find.widgetWithText(ChoiceChip, '心肺'));
+    await tester.pumpAndSettle();
+    expect(find.text('跑步'), findsOneWidget);
+    expect(find.text('跳绳'), findsOneWidget);
+    expect(find.text('深蹲'), findsNothing);
+
+    // 在「心肺」分类下将第 2 项（跳绳）向上拖到第 1 项（跑步）之上
+    final handles = find.byIcon(Icons.drag_handle_rounded);
+    expect(handles, findsNWidgets(2));
+    await tester.timedDrag(
+      handles.at(1),
+      const Offset(0, -160),
+      const Duration(milliseconds: 300),
+    );
+    await tester.pumpAndSettle();
+
+    final exercises = await db.getExercises();
+    expect(exercises.map((e) => e.id).toList(), [ropeId, squatId, runId]);
+
+    // 切回「全部」确认顺序已生效
+    await tester.tap(find.widgetWithText(ChoiceChip, '全部'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.getTopLeft(find.text('跳绳')).dy,
+      lessThan(tester.getTopLeft(find.text('深蹲')).dy),
+    );
+    expect(
+      tester.getTopLeft(find.text('深蹲')).dy,
+      lessThan(tester.getTopLeft(find.text('跑步')).dy),
+    );
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await finishTest(tester);
+  });
 }
